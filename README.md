@@ -2,6 +2,9 @@
 
 A geometric atlas for machine intelligence.
 
+> **Paper:** *Striatica: A Geometric Atlas for Machine Intelligence* — [Zenodo (coming soon)](https://zenodo.org)
+<!-- TODO: Replace the Zenodo link above with the published DOI URL -->
+
 ---
 
 # Quick Start
