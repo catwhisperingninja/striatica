@@ -1,0 +1,40 @@
+/* frontend/src/index.css */
+@import "tailwindcss";
+
+@theme {
+  /* Lime Green Standard theme */
+  --color-lime-primary: #A3D739;
+  --color-lime-accent: #E639A3;
+  --color-lime-golden: #D4A539;
+
+  /* UI chrome colors */
+  --color-panel: rgba(17, 17, 17, 0.85);
+  --color-panel-border: #1f2937;
+  --color-panel-hover: #374151;
+
+  /* Cluster palette (Tailwind defaults work, but alias for clarity) */
+  --color-cluster-0: #06b6d4;  /* cyan */
+  --color-cluster-1: #d946ef;  /* magenta */
+  --color-cluster-2: #22c55e;  /* green */
+  --color-cluster-3: #f59e0b;  /* amber */
+  --color-cluster-4: #f43f5e;  /* rose */
+  --color-cluster-5: #6366f1;  /* indigo */
+  --color-cluster-noise: #374151;  /* gray */
+
+  /* Font */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #000;
+  color: #e5e7eb;
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+/* Scrollbar styling for panels */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }
