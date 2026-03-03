@@ -2,8 +2,8 @@
 
 A geometric atlas for machine intelligence.
 
-> **Paper:** *Striatica: A Geometric Atlas for Machine Intelligence* — [Zenodo (coming soon)](https://zenodo.org)
-<!-- TODO: Replace the Zenodo link above with the published DOI URL -->
+> **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
+> [Zenodo](https://doi.org/10.5281/zenodo.18848240)
 
 ---
 
@@ -100,8 +100,8 @@ computation.
 
 ### After generating
 
-Once your model's data is in `frontend/public/data/`, launch the frontend
-and pass the dataset filename as a query parameter:
+Once your model's data is in `frontend/public/data/`, launch the frontend and
+pass the dataset filename as a query parameter:
 
 ```bash
 cd frontend && pnpm install && pnpm dev
@@ -109,8 +109,8 @@ cd frontend && pnpm install && pnpm dev
 ```
 
 Without the `?dataset=` parameter, the frontend loads the GPT-2 Small demo
-dataset by default. The `striat model` command prints the exact URL to open
-when it finishes.
+dataset by default. The `striat model` command prints the exact URL to open when
+it finishes.
 
 ### Required flags
 
@@ -290,16 +290,26 @@ frontend/
 
 Planned features, roughly in priority order:
 
-- **Multi-dataset switching** — load multiple model JSONs and switch between them in the UI
-- **Local Dimension view** — third view mode visualizing per-feature intrinsic dimensionality
-- **3D export** — export clusters or circuits as glTF/OBJ for use in Blender, 3D viewers, or presentations
-- **Annotation system** — save and share named camera positions + selection states
-- **Public deployment mode** — auth, rate limiting, and input sanitization for hosted instances
+- **Multi-dataset switching** — load multiple model JSONs and switch between
+  them in the UI
+- **Local Dimension view** — third view mode visualizing per-feature intrinsic
+  dimensionality
+- **3D export** — export clusters or circuits as glTF/OBJ for use in Blender, 3D
+  viewers, or presentations
+- **Annotation system** — save and share named camera positions + selection
+  states
+- **Public deployment mode** — auth, rate limiting, and input sanitization for
+  hosted instances
 
 ---
 
 # Contributing
 
-striatica is a solo research project and very much a work in progress. If you run into bugs, have questions, or want to suggest improvements, please open an issue or start a thread in [Discussions](https://github.com/catwhisperingninja/striatica/discussions). Pull requests are welcome.
+striatica is a solo research project and very much a work in progress. If you
+run into bugs, have questions, or want to suggest improvements, please open an
+issue or start a thread in
+[Discussions](https://github.com/catwhisperingninja/striatica/discussions). Pull
+requests are welcome.
 
-If something doesn't work on your system, please include your OS, Python version, Node version, and any error output — it helps enormously.
+If something doesn't work on your system, please include your OS, Python
+version, Node version, and any error output — it helps enormously.
