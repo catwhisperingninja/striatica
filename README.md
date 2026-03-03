@@ -1,7 +1,8 @@
 # striatica
 
-A geometric atlas for machine intelligence.
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18848240.svg)](https://doi.org/10.5281/zenodo.18848240)
+
+A geometric atlas for machine intelligence.
 
 > **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
 > [Zenodo](https://doi.org/10.5281/zenodo.18848240)
