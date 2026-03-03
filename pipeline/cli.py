@@ -18,10 +18,9 @@ import sys
 import time
 from pathlib import Path
 
-PIPELINE_ROOT = Path(__file__).parent.parent
-PROJECT_ROOT = PIPELINE_ROOT.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
-OUTPUT_DIR = PIPELINE_ROOT.parent / "frontend" / "public" / "data"
+OUTPUT_DIR = PROJECT_ROOT / "frontend" / "public" / "data"
 
 
 # ── Utilities ────────────────────────────────────────────────────────────
@@ -143,10 +142,12 @@ def cmd_model(args: argparse.Namespace) -> None:
 
     _run_process_pipeline(cfg, DATA_DIR)
 
-    dataset_path = OUTPUT_DIR / f"{cfg.model_id}-{cfg.layer}.json"
+    dataset_file = f"{cfg.model_id}-{cfg.layer}.json"
+    dataset_path = OUTPUT_DIR / dataset_file
     print(f"\n  ✅  Output: {dataset_path}")
-    print("  Launch the frontend with: striat demo")
-    print("  Or manually: cd frontend && pnpm dev")
+    print(f"  Launch the frontend with:")
+    print(f"    cd frontend && pnpm dev")
+    print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
 
 
 def _run_process_pipeline(cfg, data_dir: Path) -> None:
@@ -168,7 +169,8 @@ def _run_process_pipeline(cfg, data_dir: Path) -> None:
     if not features_path.exists():
         t0 = time.time()
         step_header("download", "Step 1a/6 · Downloading feature metadata")
-        download_features(cfg.model_id, cfg.layer, output_path=features_path)
+        batch_indices = list(range(cfg.num_batches))
+        download_features(cfg.model_id, cfg.layer, batch_indices=batch_indices, output_path=features_path)
         step_done(time.time() - t0)
     else:
         step_cached(features_path.name)
@@ -177,7 +179,8 @@ def _run_process_pipeline(cfg, data_dir: Path) -> None:
     if not explanations_path.exists():
         t0 = time.time()
         step_header("download", "Step 1b/6 · Downloading explanations")
-        download_explanations(cfg.model_id, cfg.layer, output_path=explanations_path)
+        batch_indices = list(range(cfg.num_batches))
+        download_explanations(cfg.model_id, cfg.layer, batch_indices=batch_indices, output_path=explanations_path)
         step_done(time.time() - t0)
     else:
         step_cached(explanations_path.name)
@@ -245,7 +248,7 @@ def cmd_circuits(args: argparse.Namespace) -> None:
 
     # The generate_circuits script lives outside the installed package
     # (striatica/scripts/), so we add it to sys.path and invoke its main().
-    scripts_dir = PIPELINE_ROOT / "scripts"
+    scripts_dir = PROJECT_ROOT / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     sys.argv = ["striat circuits"] + args.circuit_args

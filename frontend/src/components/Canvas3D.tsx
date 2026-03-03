@@ -23,7 +23,10 @@ export default function Canvas3D() {
 
   useEffect(() => {
     setLoading(true)
-    loadDataset(DATASET.defaultPath)
+    const params = new URLSearchParams(window.location.search)
+    const datasetFile = params.get('dataset')
+    const datasetPath = datasetFile ? `/data/${datasetFile}` : DATASET.defaultPath
+    loadDataset(datasetPath)
       .then(setDataset)
       .catch((e: Error) => setError(e.message))
     loadCircuitManifest()

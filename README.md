@@ -14,7 +14,7 @@ You need Python 3.12+, [Poetry 2.x](https://python-poetry.org/), and Node.js
 
 ```bash
 git clone https://github.com/catwhisperingninja/striatica.git
-cd striatica/pipeline
+cd striatica
 
 # Install with ML dependencies (~2GB first run: PyTorch, SAELens, TransformerLens)
 poetry install --extras ml
@@ -73,6 +73,19 @@ This runs the same pipeline (download → reduce → cluster → local dim → J
 with your model's parameters. Output lands in
 `frontend/public/data/<model>-<layer>.json`.
 
+### Quick test with a small model
+
+To verify the BYO pipeline works without downloading ~2GB of GPT-2 weights, run
+the included test script. It uses Pythia-70M (~150MB), the smallest model
+SAELens supports:
+
+```bash
+bash scripts/test_byo_model.sh
+```
+
+This calls `striat model` with pre-filled Pythia-70M flags (4 batches × 1024
+features = 4,096 features). Takes about a minute on a recent laptop.
+
 ### Hardware guidance
 
 | Model              | Features | RAM   | Time (approx) | GPU                  |
@@ -88,15 +101,16 @@ computation.
 ### After generating
 
 Once your model's data is in `frontend/public/data/`, launch the frontend
-manually:
+and pass the dataset filename as a query parameter:
 
 ```bash
 cd frontend && pnpm install && pnpm dev
+# Then open: http://localhost:5173/?dataset=gemma-2b-12-res-jb.json
 ```
 
-The frontend auto-detects whichever dataset JSON is present. If you have
-multiple datasets, the first `*.json` in `public/data/` is loaded (multi-dataset
-switching is planned).
+Without the `?dataset=` parameter, the frontend loads the GPT-2 Small demo
+dataset by default. The `striat model` command prints the exact URL to open
+when it finishes.
 
 ### Required flags
 
@@ -198,7 +212,6 @@ Circuits view auto-loads the relevant circuit.
 ### Pipeline (Python)
 
 ```bash
-cd striatica
 poetry install --extras ml    # full install with PyTorch, SAELens, TransformerLens (~2GB)
 poetry install                # lightweight: numpy/scipy/sklearn/umap/hdbscan only
 ```
@@ -223,7 +236,6 @@ and launches the dev server.
 ### Tests
 
 ```bash
-cd striatica
 poetry run pytest tests/ -v                  # all fast tests
 poetry run pytest tests/ -v -m "not slow"    # skip model-download tests
 ```
@@ -253,12 +265,11 @@ has been implemented. Please do not expose it to the public internet as-is.
 # Project Structure
 
 ```
-striatica/
-  pipeline/        # Python package — config, download, vectors, reduce, cluster,
+pipeline/          # Python package — config, download, vectors, reduce, cluster,
                    #   circuits, local_dim, prepare, cli
-  scripts/         # Entry point scripts (process_gpt2_small, generate_circuits)
-  tests/           # pytest suite
-  data/            # Cached downloads (JSONL from Neuronpedia S3, gitignored)
+scripts/           # Entry point scripts (process_gpt2_small, generate_circuits)
+tests/             # pytest suite
+data/              # Cached downloads (JSONL from Neuronpedia S3, gitignored)
 
 frontend/
   src/

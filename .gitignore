@@ -94,7 +94,7 @@ coverage/
 ##############################
 # Project-specific
 ##############################
-striatica/data/
+data/
 docs/**
 
 # Snyk Security Extension - AI Rules (auto-generated)

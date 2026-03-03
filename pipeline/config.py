@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-PIPELINE_ROOT = Path(__file__).parent.parent
-DATA_DIR = PIPELINE_ROOT / "data"
-OUTPUT_DIR = PIPELINE_ROOT.parent / "frontend" / "public" / "data"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+OUTPUT_DIR = PROJECT_ROOT / "frontend" / "public" / "data"
 
 S3_BASE = "https://neuronpedia-datasets.s3.amazonaws.com"
 
