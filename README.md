@@ -7,6 +7,14 @@ A geometric atlas for machine intelligence.
 > **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
 > [Zenodo](https://doi.org/10.5281/zenodo.18848240)
 
+![Default view](img/default-reset%20view.png)
+*Default view.*
+
+![Example view of a feature, a circuit, and the local dimension heatmap display.](img/5781-circview-dim.png)
+*Example view of a feature, a circuit, and the local dimension heatmap display.*
+
+
+
 ---
 
 # Quick Start
