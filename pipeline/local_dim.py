@@ -26,18 +26,33 @@ def estimate_local_dim_pr(
     eigenvalues, and returns PR = (sum lambda_i)^2 / sum(lambda_i^2).
     Well-established: Gao & Ganguli 2017, widely used in neuroscience.
     """
+    import time as _time
+
     n = len(vectors)
-    print(f"    Building KDTree for {n} points...")
+    print(f"    Building KDTree for {n:,} points...")
     tree = KDTree(vectors)
     dims = np.zeros(n, dtype=np.float32)
 
     print(f"    Querying {k} nearest neighbors...")
     _, indices = tree.query(vectors, k=k + 1)  # +1 because query includes self
 
-    log_interval = max(1, n // 20)  # report every 5%
+    print(f"    Computing participation ratios...")
+    _last_log = _time.monotonic()
+    _log_every = 15.0  # seconds — ~4 updates per minute
+    _t_start = _last_log
     for i in range(n):
-        if i % log_interval == 0:
-            print(f"    [{i / n * 100:5.1f}%] Processing point {i}/{n}...")
+        _now = _time.monotonic()
+        if i == 0 or _now - _last_log >= _log_every:
+            pct = i / n * 100
+            elapsed = _now - _t_start
+            eta = ""
+            if i > 0:
+                rate = i / elapsed
+                remaining = (n - i) / rate
+                m, s = divmod(int(remaining), 60)
+                eta = f" · ETA {m}m{s:02d}s"
+            print(f"    [{pct:5.1f}%] {i:,}/{n:,} points{eta}")
+            _last_log = _now
         nbrs = vectors[indices[i, 1:]]  # exclude self
         nbrs_centered = nbrs - nbrs.mean(axis=0)
         cov = nbrs_centered.T @ nbrs_centered / (k - 1)
@@ -49,7 +64,9 @@ def estimate_local_dim_pr(
             dims[i] = (sum_eig ** 2) / sum_eig_sq
         else:
             dims[i] = 0.0
-    print(f"    [100.0%] Done.")
+    elapsed_total = _time.monotonic() - _t_start
+    m, s = divmod(int(elapsed_total), 60)
+    print(f"    [100.0%] Done · {n:,} points in {m}m{s:02d}s")
 
     return dims
 
@@ -98,8 +115,10 @@ def estimate_local_dim_vgt(
     From Curry et al. 2025 (arXiv 2507.22010, Eq. 5).
     NOTE: This method is from a preprint not yet peer-reviewed.
     """
+    import time as _time
+
     n = len(vectors)
-    print(f"    Building KDTree for {n} points...")
+    print(f"    Building KDTree for {n:,} points...")
     tree = KDTree(vectors)
     print(f"    Querying {max_k} nearest neighbors...")
     dists, _ = tree.query(vectors, k=max_k + 1)
@@ -107,10 +126,23 @@ def estimate_local_dim_vgt(
     dims = np.zeros(n, dtype=np.float32)
     curves = [] if return_curves else None
 
-    log_interval = max(1, n // 20)  # report every 5%
+    print(f"    Computing VGT growth curves...")
+    _last_log = _time.monotonic()
+    _log_every = 15.0  # seconds — ~4 updates per minute
+    _t_start = _last_log
     for i in range(n):
-        if i % log_interval == 0:
-            print(f"    [{i / n * 100:5.1f}%] Processing point {i}/{n}...")
+        _now = _time.monotonic()
+        if i == 0 or _now - _last_log >= _log_every:
+            pct = i / n * 100
+            elapsed = _now - _t_start
+            eta = ""
+            if i > 0:
+                rate = i / elapsed
+                remaining = (n - i) / rate
+                m, s = divmod(int(remaining), 60)
+                eta = f" · ETA {m}m{s:02d}s"
+            print(f"    [{pct:5.1f}%] {i:,}/{n:,} points{eta}")
+            _last_log = _now
         d_i = dists[i, 1:]
         d_i = d_i[d_i > 0]
         if len(d_i) < 5:
@@ -152,7 +184,9 @@ def estimate_local_dim_vgt(
                 "intercept": float(intercept),
             })
 
-    print(f"    [100.0%] Done.")
+    elapsed_total = _time.monotonic() - _t_start
+    m, s = divmod(int(elapsed_total), 60)
+    print(f"    [100.0%] Done · {n:,} points in {m}m{s:02d}s")
 
     if return_curves:
         return dims, curves

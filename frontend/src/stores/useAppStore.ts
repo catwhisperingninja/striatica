@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import type { ColorMode, ViewMode, DatasetJSON, FeatureData } from '../types/feature'
 import type { CircuitData, CircuitManifest } from '../types/circuit'
-import { loadCircuit } from '../utils/dataLoader'
+import { loadCircuit, listDatasets, loadDataset, type DatasetEntry } from '../utils/dataLoader'
 
 /** Maps featureIndex → list of circuit IDs that contain it */
 export type CircuitMembershipIndex = Map<number, string[]>
@@ -15,6 +15,8 @@ interface AppState {
   dataset: DatasetJSON | null
   loading: boolean
   error: string | null
+  availableDatasets: DatasetEntry[]
+  currentDatasetFile: string | null
 
   // Selection
   hoveredIndex: number | null
@@ -41,6 +43,8 @@ interface AppState {
   setDataset: (data: DatasetJSON) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
+  setAvailableDatasets: (datasets: DatasetEntry[]) => void
+  switchDataset: (file: string) => Promise<void>
   setHovered: (index: number | null) => void
   setSelected: (index: number | null) => void
   toggleClusterSelection: (id: number, shift: boolean) => void
@@ -68,6 +72,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   dataset: null,
   loading: false,
   error: null,
+  availableDatasets: [],
+  currentDatasetFile: null,
   hoveredIndex: null,
   selectedIndex: null,
   selectedClusters: new Set<number>(),
@@ -87,6 +93,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDataset: (data) => set({ dataset: data, loading: false, error: null }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error, loading: false }),
+  setAvailableDatasets: (datasets) => set({ availableDatasets: datasets }),
+  switchDataset: async (file) => {
+    const state = get()
+    if (state.currentDatasetFile === file) return
+    // Reset everything, then load the new dataset
+    set({
+      loading: true,
+      error: null,
+      dataset: null,
+      currentDatasetFile: file,
+      selectedIndex: null,
+      hoveredIndex: null,
+      selectedClusters: new Set<number>(),
+      flyTarget: null,
+      isolateUncategorized: false,
+      circuitData: null,
+      viewMode: 'pointCloud' as ViewMode,
+      resetKey: state.resetKey + 1,
+    })
+    try {
+      const data = await loadDataset(`/data/${file}`)
+      set({ dataset: data, loading: false })
+      // Update URL without reload so bookmarking works
+      const url = new URL(window.location.href)
+      url.searchParams.set('dataset', file)
+      window.history.replaceState({}, '', url.toString())
+    } catch (e) {
+      set({ error: (e as Error).message, loading: false })
+    }
+  },
   setHovered: (index) => set({ hoveredIndex: index }),
   setSelected: (index) => {
     if (index !== null) {

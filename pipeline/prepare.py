@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time as _time
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +23,11 @@ def prepare_json(
     layer: str = "6-res-jb",
 ) -> dict:
     """Assemble final JSON combining 3D coords, clusters, and metadata."""
+    n = len(coords)
+    _t_start = _time.monotonic()
+
     # Load feature metadata
+    print(f"    Loading feature metadata from {features_jsonl.name}...")
     feature_meta = {}
     with open(features_jsonl) as f:
         for line in f:
@@ -35,8 +40,10 @@ def prepare_json(
                 "posTokens": d.get("pos_str", [])[:5],
                 "negTokens": d.get("neg_str", [])[:3],
             }
+    print(f"    Loaded {len(feature_meta):,} feature records")
 
     # Load explanations
+    print(f"    Loading explanations from {explanations_jsonl.name}...")
     explanations = {}
     with open(explanations_jsonl) as f:
         for line in f:
@@ -44,12 +51,16 @@ def prepare_json(
             idx = int(d["index"])
             if idx not in explanations:
                 explanations[idx] = d.get("description", "")
+    print(f"    Loaded {len(explanations):,} explanations")
 
     # Flatten positions to interleaved array
+    print(f"    Flattening {n:,} positions...")
     positions = coords.flatten().tolist()
 
     # Build cluster info
     unique_labels = sorted(set(labels))
+    n_clusters = len(unique_labels) - (1 if -1 in unique_labels else 0)
+    print(f"    Building cluster centroids ({n_clusters} clusters)...")
     clusters = []
     for label in unique_labels:
         mask = labels == label
@@ -61,9 +72,16 @@ def prepare_json(
         })
 
     # Build per-feature metadata
-    n = len(coords)
+    print(f"    Assembling {n:,} feature records...")
     features = []
+    _last_log = _time.monotonic()
+    _log_every = 15.0
     for i in range(n):
+        _now = _time.monotonic()
+        if i > 0 and _now - _last_log >= _log_every:
+            pct = i / n * 100
+            print(f"    [{pct:5.1f}%] {i:,}/{n:,} features assembled")
+            _last_log = _now
         meta = feature_meta.get(i, {})
         features.append({
             "index": i,
@@ -95,11 +113,14 @@ def prepare_json(
         result["growthCurves"] = growth_curves
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"    Writing JSON to disk...")
     with open(output_path, "w") as f:
         json.dump(result, f)
 
     size_mb = output_path.stat().st_size / 1024 / 1024
-    print(f"  Wrote {output_path} ({size_mb:.1f} MB)")
+    elapsed = _time.monotonic() - _t_start
+    m, s = divmod(int(elapsed), 60)
+    print(f"  Wrote {output_path} ({size_mb:.1f} MB) in {m}m{s:02d}s")
     return result
 
 

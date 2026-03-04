@@ -41,6 +41,7 @@ export default function DebugConsole() {
     const tracked = [
       'selectedIndex', 'viewMode', 'colorMode',
       'edgeThreshold', 'flyKey', 'loading', 'error',
+      'currentDatasetFile',
     ] as const
 
     const unsub = useAppStore.subscribe((state) => {
@@ -127,6 +128,7 @@ export default function DebugConsole() {
   const circuitManifest = useAppStore((s) => s.circuitManifest)
   const loading = useAppStore((s) => s.loading)
   const error = useAppStore((s) => s.error)
+  const currentDatasetFile = useAppStore((s) => s.currentDatasetFile)
 
   // Poll camera position from shared mutable object (~4fps)
   const [camPosStr, setCamPosStr] = useState('0.00, 0.00, 0.00')
@@ -218,6 +220,7 @@ export default function DebugConsole() {
 
       {/* State panel */}
       <div className="px-2 py-1.5 border-b border-gray-800 space-y-0.5">
+        <Row label="dataset" value={currentDatasetFile ?? 'null'} />
         <Row label="viewMode" value={viewMode} />
         <Row label="colorMode" value={colorMode} />
         <Row label="selectedIndex" value={selectedIndex === null ? 'null' : String(selectedIndex)} highlight={selectedIndex !== null} />

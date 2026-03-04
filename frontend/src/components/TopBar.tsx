@@ -15,6 +15,14 @@ export default function TopBar() {
   const colorMode = useAppStore((s) => s.colorMode)
   const setColorMode = useAppStore((s) => s.setColorMode)
   const hasLocalDim = useAppStore((s) => !!(s.dataset?.localDimensions?.length))
+  const availableDatasets = useAppStore((s) => s.availableDatasets)
+  const currentDatasetFile = useAppStore((s) => s.currentDatasetFile)
+  const switchDataset = useAppStore((s) => s.switchDataset)
+  const loading = useAppStore((s) => s.loading)
+
+  // Derive model/layer info from current dataset selection
+  const currentEntry = availableDatasets.find((d) => d.file === currentDatasetFile)
+  const hasMultiple = availableDatasets.length > 1
 
   return (
     <div className="flex items-center gap-4 px-4 py-2 bg-[--color-panel] border-b border-[--color-panel-border] backdrop-blur-xl z-10">
@@ -23,12 +31,25 @@ export default function TopBar() {
       </span>
       <div className="w-px h-5 bg-[--color-panel-border]" />
 
-      <select disabled title="Multi-dataset support coming soon" className="bg-gray-900 text-gray-500 border border-[--color-panel-border] rounded-md px-2 py-1 text-xs cursor-not-allowed opacity-60">
-        <option>GPT2-small</option>
-      </select>
-
-      <select disabled title="Multi-dataset support coming soon" className="bg-gray-900 text-gray-500 border border-[--color-panel-border] rounded-md px-2 py-1 text-xs cursor-not-allowed opacity-60">
-        <option>Layer 6 (residual)</option>
+      <select
+        disabled={loading || availableDatasets.length <= 1}
+        value={currentDatasetFile ?? ''}
+        onChange={(e) => switchDataset(e.target.value)}
+        title={hasMultiple ? 'Switch dataset' : 'Only one dataset available — run the pipeline for more models'}
+        className={`bg-gray-900 border border-[--color-panel-border] rounded-md px-2 py-1 text-xs ${
+          hasMultiple && !loading
+            ? 'text-gray-200 cursor-pointer hover:border-[--color-cluster-0]'
+            : 'text-gray-500 cursor-not-allowed opacity-60'
+        }`}
+      >
+        {availableDatasets.length === 0 && (
+          <option value="">{currentEntry?.model ?? 'Loading…'}</option>
+        )}
+        {availableDatasets.map((d) => (
+          <option key={d.file} value={d.file}>
+            {d.model} · layer {d.layer} ({d.numFeatures.toLocaleString()})
+          </option>
+        ))}
       </select>
 
       <div className="flex items-center gap-1 text-xs">
