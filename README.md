@@ -76,7 +76,8 @@ poetry run striat model \
   --sae-release gemma-2b-res-jb \
   --sae-hook blocks.12.hook_resid_pre \
   --num-batches 48 \
-  --features-per-batch 1024
+  --features-per-batch 1024 \
+  --device auto
 ```
 
 This runs the same pipeline (download → reduce → cluster → local dim → JSON) but
@@ -131,14 +132,55 @@ it finishes.
 | `--sae-release` | SAELens release name                  | `gpt2-small-res-jb`       |
 | `--sae-hook`    | TransformerLens hook point            | `blocks.6.hook_resid_pre` |
 
-| Optional               | Description                | Default |
-| ---------------------- | -------------------------- | ------- |
-| `--num-batches`        | Neuronpedia S3 batch count | 24      |
-| `--features-per-batch` | Features per S3 batch      | 1024    |
+| Optional               | Description                            | Default |
+| ---------------------- | -------------------------------------- | ------- |
+| `--num-batches`        | Neuronpedia S3 batch count             | 24      |
+| `--features-per-batch` | Features per S3 batch                  | 1024    |
+| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu` | `auto`  |
+| `--json-export`        | Export JSON only, no frontend instructions | off     |
 
 To find the right values for your model, check the
 [SAELens model list](https://github.com/jbloom/SAELens) and
 [Neuronpedia](https://neuronpedia.org).
+
+### Hook point formats
+
+SAELens supports multiple hook point formats depending on the model and release:
+
+**TransformerLens hook points** (most common):
+- `blocks.{N}.hook_resid_pre` — before residual stream at layer N
+- `blocks.{N}.hook_resid_post` — after residual stream at layer N
+
+**Newer canonical releases** (SAELens standardized format):
+- `layer_{N}/width_{K}k/canonical` — e.g., `layer_6/width_16k/canonical`
+
+Check the SAELens documentation or Neuronpedia for your model's available hook
+points. The `--sae-hook` flag accepts any string — it's passed directly to
+`SAE.from_pretrained()`.
+
+### Remote compute, local visualization
+
+To run the pipeline on a remote server (e.g., a GPU instance) and view results
+on your local machine:
+
+```bash
+# On remote server
+poetry run striat model \
+  --model gemma-2b \
+  --layer 12-res-jb \
+  --sae-release gemma-2b-res-jb \
+  --sae-hook blocks.12.hook_resid_pre \
+  --device cuda \
+  --json-export
+
+# Copy the output JSON to your local machine
+scp remote:path/to/striatica/frontend/public/data/gemma-2b-12-res-jb.json \
+  ./frontend/public/data/
+
+# On local machine — launch frontend and open the dataset
+cd frontend && pnpm dev
+# Open: http://localhost:5173/?dataset=gemma-2b-12-res-jb.json
+```
 
 ---
 
@@ -230,6 +272,32 @@ The lightweight install is enough for similarity circuits and re-running the
 frontend on existing data. Co-activation circuits and `striat model` require the
 ML extras.
 
+#### Linux prerequisites
+
+Some Python dependencies (notably hdbscan) compile C extensions from source. On
+Ubuntu/Debian, install build tools before running `poetry install`:
+
+```bash
+sudo apt update && sudo apt install -y build-essential python3-dev
+```
+
+#### GPU and VM notes
+
+The data pipeline device flag controls where PyTorch runs SAE and model
+inference. On an NVIDIA GPU, this is `cuda`. On Apple Silicon, `mps`. If you are
+in a VM without GPU passthrough or on a system without a supported GPU, the
+pipeline falls back to `cpu` — everything still works, just slower for larger
+models.
+
+| System                              | Device  |
+| ----------------------------------- | ------- |
+| NVIDIA GPU (native or passthrough)  | `cuda`  |
+| Apple Silicon (M1/M2/M3/M4)        | `mps`   |
+| VM without GPU / CPU-only           | `cpu`   |
+
+GPT-2 Small runs comfortably on CPU. Gemma 2B and larger models benefit
+significantly from GPU acceleration.
+
 ### Frontend (Node.js)
 
 ```bash
@@ -240,8 +308,8 @@ pnpm build          # production build
 pnpm preview        # serve production build
 ```
 
-If you don't have pnpm, `./dev.sh` at the project root installs it via corepack
-and launches the dev server.
+If you don't have pnpm, `corepack enable` will make it available (requires
+Node.js 18+).
 
 ### Tests
 

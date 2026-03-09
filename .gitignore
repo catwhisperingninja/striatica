@@ -41,11 +41,12 @@ Thumbs.db
 *.jks
 
 ##############################
-# Logs / temp
+# Logs / temp / recordings
 ##############################
 *.log
 *.tmp
 _tmp_*
+*.cast
 
 ##############################
 # Python / Poetry
@@ -96,6 +97,16 @@ coverage/
 ##############################
 data/
 docs/**
+
+##############################
+# Video / Remotion (local only — never pushed)
+##############################
+video/
+*.mp4
+*.webm
+*.mov
+*.avi
+*.mkv
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .cursor/rules/snyk_rules.mdc

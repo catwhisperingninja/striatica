@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import shutil
 import socket
 import subprocess
@@ -57,14 +58,43 @@ def _launch_frontend(port: int) -> None:
         subprocess.run(["corepack", "enable"], check=True)
 
     subprocess.run(["pnpm", "install"], cwd=FRONTEND_DIR, check=True)
+
+    # Launch Vite via Popen so we control shutdown cleanly.
+    # subprocess.run + check=True lets pnpm print ELIFECYCLE on SIGINT;
+    # managing the process ourselves avoids that noise.
+    proc = subprocess.Popen(
+        ["pnpm", "dev", "--port", str(port)],
+        cwd=FRONTEND_DIR,
+        # Give pnpm its own process group so SIGINT doesn't race
+        preexec_fn=os.setpgrp,
+    )
     try:
-        subprocess.run(
-            ["pnpm", "dev", "--port", str(port)],
-            cwd=FRONTEND_DIR,
-            check=True,
-        )
-    except (subprocess.CalledProcessError, KeyboardInterrupt):
-        pass  # Clean exit — Ctrl+C kills the dev server, that's fine
+        proc.wait()
+    except KeyboardInterrupt:
+        # Send SIGTERM to the process group (pnpm + vite), then wait
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass  # Already exited
+        proc.wait(timeout=5)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def _detect_device(requested: str = "auto") -> str:
+    """Resolve torch device: auto-detect cuda → mps → cpu, or use explicit."""
+    if requested != "auto":
+        return requested
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except ImportError:
+        pass
+    return "cpu"
 
 
 def _ask_yes_no(prompt: str, default: bool = True) -> bool:
@@ -124,6 +154,8 @@ def cmd_model(args: argparse.Namespace) -> None:
 
     print_banner()
 
+    device = _detect_device(args.device)
+
     cfg = SAEConfig(
         model_id=args.model,
         layer=args.layer,
@@ -138,19 +170,27 @@ def cmd_model(args: argparse.Namespace) -> None:
     print(f"  🛰️  SAE release: {cfg.sae_release}")
     print(f"  🔗  SAE hook:    {cfg.sae_hook}")
     print(f"  ⚡  Features:    {cfg.num_batches * cfg.features_per_batch:,}")
+    print(f"  🖥️  Device:      {device}")
     print()
 
-    _run_process_pipeline(cfg, DATA_DIR)
+    _run_process_pipeline(cfg, DATA_DIR, device=device)
 
     dataset_file = f"{cfg.model_id}-{cfg.layer}.json"
     dataset_path = OUTPUT_DIR / dataset_file
-    print(f"\n  ✅  Output: {dataset_path}")
-    print(f"  Launch the frontend with:")
-    print(f"    cd frontend && pnpm dev")
-    print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
+
+    if args.json_export:
+        print(f"\n  ✅  JSON exported: {dataset_path}")
+        print(f"  Transfer to local machine:")
+        print(f"    scp remote:{dataset_path} ./frontend/public/data/")
+        print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
+    else:
+        print(f"\n  ✅  Output: {dataset_path}")
+        print(f"  Launch the frontend with:")
+        print(f"    cd frontend && pnpm dev")
+        print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
 
 
-def _run_process_pipeline(cfg, data_dir: Path) -> None:
+def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu") -> None:
     """Run the full data pipeline for a given SAEConfig."""
     from pipeline.banner import step_header, step_done, step_cached
     from pipeline.download import download_features, download_explanations
@@ -188,7 +228,7 @@ def _run_process_pipeline(cfg, data_dir: Path) -> None:
     # Step 2: Load decoder vectors
     t0 = time.time()
     step_header("vectors", "Step 2/6 · Loading SAELens decoder vectors")
-    vectors = load_decoder_vectors(cfg.sae_release, cfg.sae_hook)
+    vectors = load_decoder_vectors(cfg.sae_release, cfg.sae_hook, device=device)
     print(f"     {vectors.shape[0]:,} vectors × {vectors.shape[1]} dimensions")
     step_done(time.time() - t0)
 
@@ -267,10 +307,12 @@ def main() -> None:
             "examples:\n"
             "  striat demo                               # GPT-2 Small demo, launches browser\n"
             "  striat demo --port 8080                   # use a specific port\n"
-            "  striat model --model gpt2-small \\         # bring your own model\n"
-            "    --layer 6-res-jb \\\n"
-            "    --sae-release gpt2-small-res-jb \\\n"
-            "    --sae-hook blocks.6.hook_resid_pre\n"
+            "  striat model --model gemma-2b \\             # bring your own model\n"
+            "    --layer 12-res-jb \\\n"
+            "    --sae-release gemma-2b-res-jb \\\n"
+            "    --sae-hook blocks.12.hook_resid_pre \\\n"
+            "    --device auto\n"
+            "  striat model ... --json-export              # export JSON without frontend\n"
             "  striat circuits --batch-defaults           # generate default circuits\n"
             "  striat circuits --type coactivation \\      # custom circuit\n"
             "    --prompt 'The capital of France is'\n"
@@ -292,6 +334,8 @@ def main() -> None:
     p_model.add_argument("--sae-hook", required=True, help="SAELens hook point (e.g., blocks.6.hook_resid_pre)")
     p_model.add_argument("--num-batches", type=int, default=24, help="S3 batch file count (default: 24)")
     p_model.add_argument("--features-per-batch", type=int, default=1024, help="Features per batch (default: 1024)")
+    p_model.add_argument("--device", default="auto", help="Torch device: auto, cuda, mps, or cpu (default: auto)")
+    p_model.add_argument("--json-export", action="store_true", help="Export JSON only, skip frontend launch instructions")
     p_model.set_defaults(func=cmd_model)
 
     # ── circuits ──

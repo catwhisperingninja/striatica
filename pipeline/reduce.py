@@ -10,6 +10,7 @@ def reduce_to_3d(
     vectors: np.ndarray,
     pca_dim: int = 50,
     random_state: int = 42,
+    n_jobs: int = -1,
 ) -> np.ndarray:
     """Reduce high-dimensional vectors to 3D coordinates.
 
@@ -19,6 +20,7 @@ def reduce_to_3d(
         vectors: (n_features, hidden_dim) array
         pca_dim: intermediate PCA dimensions
         random_state: for reproducibility
+        n_jobs: CPU cores for UMAP (-1 = all cores)
 
     Returns:
         (n_features, 3) float32 array of 3D coordinates
@@ -36,6 +38,7 @@ def reduce_to_3d(
         metric="cosine",
         random_state=random_state,
         verbose=True,
+        n_jobs=n_jobs,
     )
     coords = umap.fit_transform(reduced).astype(np.float32)
 

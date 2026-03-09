@@ -12,13 +12,39 @@ neighborhood geometry in the original high-dimensional space.
 
 from __future__ import annotations
 
+import os
+import time as _time
+
 import numpy as np
 from scipy.spatial import KDTree
+
+
+def _default_n_jobs() -> int:
+    """Auto-detect CPU core count, leave 1 free for the OS."""
+    return max(1, (os.cpu_count() or 2) - 1)
+
+
+# ── Participation Ratio ──────────────────────────────────────────────────
+
+
+def _pr_single(vectors: np.ndarray, indices: np.ndarray, i: int, k: int) -> float:
+    """Compute participation ratio for a single point (joblib helper)."""
+    nbrs = vectors[indices[i, 1:]]
+    nbrs_centered = nbrs - nbrs.mean(axis=0)
+    cov = nbrs_centered.T @ nbrs_centered / (k - 1)
+    eigenvalues = np.linalg.eigvalsh(cov)
+    eigenvalues = np.maximum(eigenvalues, 0)
+    sum_eig = eigenvalues.sum()
+    sum_eig_sq = (eigenvalues ** 2).sum()
+    if sum_eig_sq > 0:
+        return (sum_eig ** 2) / sum_eig_sq
+    return 0.0
 
 
 def estimate_local_dim_pr(
     vectors: np.ndarray,
     k: int = 30,
+    n_jobs: int | None = None,
 ) -> np.ndarray:
     """Participation ratio of local PCA eigenvalues.
 
@@ -26,63 +52,49 @@ def estimate_local_dim_pr(
     eigenvalues, and returns PR = (sum lambda_i)^2 / sum(lambda_i^2).
     Well-established: Gao & Ganguli 2017, widely used in neuroscience.
     """
-    import time as _time
+    from joblib import Parallel, delayed
+
+    if n_jobs is None:
+        n_jobs = _default_n_jobs()
 
     n = len(vectors)
     print(f"    Building KDTree for {n:,} points...")
     tree = KDTree(vectors)
-    dims = np.zeros(n, dtype=np.float32)
 
-    print(f"    Querying {k} nearest neighbors...")
-    _, indices = tree.query(vectors, k=k + 1)  # +1 because query includes self
+    print(f"    Querying {k} nearest neighbors (workers={n_jobs})...")
+    _, indices = tree.query(vectors, k=k + 1, workers=n_jobs)
 
-    print(f"    Computing participation ratios...")
-    _last_log = _time.monotonic()
-    _log_every = 15.0  # seconds — ~4 updates per minute
-    _t_start = _last_log
-    for i in range(n):
-        _now = _time.monotonic()
-        if i == 0 or _now - _last_log >= _log_every:
-            pct = i / n * 100
-            elapsed = _now - _t_start
-            eta = ""
-            if i > 0:
-                rate = i / elapsed
-                remaining = (n - i) / rate
-                m, s = divmod(int(remaining), 60)
-                eta = f" · ETA {m}m{s:02d}s"
-            print(f"    [{pct:5.1f}%] {i:,}/{n:,} points{eta}")
-            _last_log = _now
-        nbrs = vectors[indices[i, 1:]]  # exclude self
-        nbrs_centered = nbrs - nbrs.mean(axis=0)
-        cov = nbrs_centered.T @ nbrs_centered / (k - 1)
-        eigenvalues = np.linalg.eigvalsh(cov)
-        eigenvalues = np.maximum(eigenvalues, 0)  # numerical stability
-        sum_eig = eigenvalues.sum()
-        sum_eig_sq = (eigenvalues ** 2).sum()
-        if sum_eig_sq > 0:
-            dims[i] = (sum_eig ** 2) / sum_eig_sq
-        else:
-            dims[i] = 0.0
-    elapsed_total = _time.monotonic() - _t_start
-    m, s = divmod(int(elapsed_total), 60)
+    print(f"    Computing participation ratios (n_jobs={n_jobs})...")
+    t_start = _time.monotonic()
+    dims = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(_pr_single)(vectors, indices, i, k) for i in range(n)
+    )
+    elapsed = _time.monotonic() - t_start
+    m, s = divmod(int(elapsed), 60)
     print(f"    [100.0%] Done · {n:,} points in {m}m{s:02d}s")
 
-    return dims
+    return np.array(dims, dtype=np.float32)
+
+
+# ── TwoNN ────────────────────────────────────────────────────────────────
 
 
 def estimate_local_dim_twonn(
     vectors: np.ndarray,
     k: int = 30,
+    n_jobs: int | None = None,
 ) -> np.ndarray:
     """TwoNN-inspired local dimension estimate.
 
     For each point, uses the ratio of 2nd to 1st nearest neighbor distances.
     Based on Ansuini et al. NeurIPS 2019.
     """
+    if n_jobs is None:
+        n_jobs = _default_n_jobs()
+
     n = len(vectors)
     tree = KDTree(vectors)
-    dists, indices = tree.query(vectors, k=k + 1)
+    dists, indices = tree.query(vectors, k=k + 1, workers=n_jobs)
 
     r1 = dists[:, 1]
     r2 = dists[:, 2]
@@ -104,93 +116,89 @@ def estimate_local_dim_twonn(
     return dims
 
 
+# ── Volume Growth Transform ──────────────────────────────────────────────
+
+
+def _vgt_single(d_i: np.ndarray, n_radii: int, return_curve: bool) -> tuple[float, dict | None]:
+    """Compute VGT for a single point (joblib helper)."""
+    d_i = d_i[d_i > 0]
+    empty_curve = {"log_r": [], "log_v": [], "slope": 0.0, "intercept": 0.0}
+
+    if len(d_i) < 5:
+        return 0.0, empty_curve if return_curve else None
+
+    max_r = d_i[-1]
+    min_r = d_i[0]
+    if max_r <= min_r or min_r <= 0:
+        return 0.0, empty_curve if return_curve else None
+
+    radii = np.geomspace(min_r, max_r, n_radii)
+    log_r = np.log(radii)
+    log_v = np.array([np.log(max(np.searchsorted(d_i, r), 1)) for r in radii])
+
+    valid = log_v > 0
+    if valid.sum() < 3:
+        return 0.0, empty_curve if return_curve else None
+
+    A = np.vstack([log_r[valid], np.ones(valid.sum())]).T
+    result = np.linalg.lstsq(A, log_v[valid], rcond=None)
+    slope = result[0][0]
+    intercept = result[0][1]
+    dim = max(slope, 0.0)
+
+    curve = None
+    if return_curve:
+        curve = {
+            "log_r": log_r[valid].tolist(),
+            "log_v": log_v[valid].tolist(),
+            "slope": float(slope),
+            "intercept": float(intercept),
+        }
+
+    return dim, curve
+
+
 def estimate_local_dim_vgt(
     vectors: np.ndarray,
     n_radii: int = 10,
     max_k: int = 50,
     return_curves: bool = False,
+    n_jobs: int | None = None,
 ) -> np.ndarray | tuple[np.ndarray, list[dict]]:
     """Volume Growth Transform: log-volume vs log-radius slope.
 
     From Curry et al. 2025 (arXiv 2507.22010, Eq. 5).
     NOTE: This method is from a preprint not yet peer-reviewed.
     """
-    import time as _time
+    from joblib import Parallel, delayed
+
+    if n_jobs is None:
+        n_jobs = _default_n_jobs()
 
     n = len(vectors)
     print(f"    Building KDTree for {n:,} points...")
     tree = KDTree(vectors)
-    print(f"    Querying {max_k} nearest neighbors...")
-    dists, _ = tree.query(vectors, k=max_k + 1)
+    print(f"    Querying {max_k} nearest neighbors (workers={n_jobs})...")
+    dists, _ = tree.query(vectors, k=max_k + 1, workers=n_jobs)
 
-    dims = np.zeros(n, dtype=np.float32)
-    curves = [] if return_curves else None
-
-    print(f"    Computing VGT growth curves...")
-    _last_log = _time.monotonic()
-    _log_every = 15.0  # seconds — ~4 updates per minute
-    _t_start = _last_log
-    for i in range(n):
-        _now = _time.monotonic()
-        if i == 0 or _now - _last_log >= _log_every:
-            pct = i / n * 100
-            elapsed = _now - _t_start
-            eta = ""
-            if i > 0:
-                rate = i / elapsed
-                remaining = (n - i) / rate
-                m, s = divmod(int(remaining), 60)
-                eta = f" · ETA {m}m{s:02d}s"
-            print(f"    [{pct:5.1f}%] {i:,}/{n:,} points{eta}")
-            _last_log = _now
-        d_i = dists[i, 1:]
-        d_i = d_i[d_i > 0]
-        if len(d_i) < 5:
-            dims[i] = 0.0
-            if return_curves:
-                curves.append({"log_r": [], "log_v": [], "slope": 0.0, "intercept": 0.0})
-            continue
-
-        max_r = d_i[-1]
-        min_r = d_i[0]
-        if max_r <= min_r or min_r <= 0:
-            dims[i] = 0.0
-            if return_curves:
-                curves.append({"log_r": [], "log_v": [], "slope": 0.0, "intercept": 0.0})
-            continue
-
-        radii = np.geomspace(min_r, max_r, n_radii)
-        log_r = np.log(radii)
-        log_v = np.array([np.log(max(np.searchsorted(d_i, r), 1)) for r in radii])
-
-        valid = log_v > 0
-        if valid.sum() < 3:
-            dims[i] = 0.0
-            if return_curves:
-                curves.append({"log_r": [], "log_v": [], "slope": 0.0, "intercept": 0.0})
-            continue
-
-        A = np.vstack([log_r[valid], np.ones(valid.sum())]).T
-        result = np.linalg.lstsq(A, log_v[valid], rcond=None)
-        slope = result[0][0]
-        intercept = result[0][1]
-        dims[i] = max(slope, 0.0)
-
-        if return_curves:
-            curves.append({
-                "log_r": log_r[valid].tolist(),
-                "log_v": log_v[valid].tolist(),
-                "slope": float(slope),
-                "intercept": float(intercept),
-            })
-
-    elapsed_total = _time.monotonic() - _t_start
-    m, s = divmod(int(elapsed_total), 60)
+    print(f"    Computing VGT growth curves (n_jobs={n_jobs})...")
+    t_start = _time.monotonic()
+    results = Parallel(n_jobs=n_jobs, verbose=10)(
+        delayed(_vgt_single)(dists[i, 1:], n_radii, return_curves) for i in range(n)
+    )
+    elapsed = _time.monotonic() - t_start
+    m, s = divmod(int(elapsed), 60)
     print(f"    [100.0%] Done · {n:,} points in {m}m{s:02d}s")
 
+    dims = np.array([r[0] for r in results], dtype=np.float32)
+
     if return_curves:
+        curves = [r[1] for r in results]
         return dims, curves
     return dims
+
+
+# ── Unified Interface ────────────────────────────────────────────────────
 
 
 def estimate_local_dim(
