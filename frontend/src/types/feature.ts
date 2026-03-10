@@ -36,4 +36,5 @@ export interface DatasetJSON {
   growthCurves?: GrowthCurve[] // per-point VGT log-log curves (for detail panel)
   clusters: ClusterData[]
   features: FeatureData[]
+  semanticsRedacted?: boolean // true when feature explanations were stripped for safety
 }

@@ -7,13 +7,10 @@ A geometric atlas for machine intelligence.
 > **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
 > [Zenodo](https://doi.org/10.5281/zenodo.18848240)
 
-![Default view](img/default-reset%20view.png)
-*Default view.*
+![Default view](img/default-reset%20view.png) _Default view._
 
 ![Example view of a feature, a circuit, and the local dimension heatmap display.](img/5781-circview-dim.png)
-*Example view of a feature, a circuit, and the local dimension heatmap display.*
-
-
+_Example view of a feature, a circuit, and the local dimension heatmap display._
 
 ---
 
@@ -38,6 +35,68 @@ exist, optionally generates circuits, finds an open port, and starts the
 frontend.
 
 Open the localhost URL, and you're exploring.
+
+# Responsible Use: Interpretability Safety
+
+**This tool can identify features involved in AI safety behaviors.**
+
+When applied to capable models, striatica's pipeline generates semantic
+interpretations of individual features and circuits — including features that
+participate in alignment, honesty, refusal, and other safety-relevant behaviors.
+If these interpretations are published or enter model training data, they could
+be used to identify and circumvent safety mechanisms in current and future AI
+systems.
+
+**What the pipeline does by default:**
+
+For small, well-studied models (GPT-2 Small, Pythia-70M), semantic labels are
+included in the output. These models' safety circuits are either non-existent or
+already public knowledge.
+
+For all other models, semantic labels are **redacted by default**. The pipeline
+produces geometry, topology, clustering, and circuit structure (all
+scientifically useful) without the interpretation layer that maps features to
+human-readable meanings. This can be overridden with `--include-semantics`, but
+please read the following before doing so.
+
+**If you are publishing research using striatica:**
+
+- Do not publish complete semantic mappings of safety-relevant features for
+  capable models.
+- If your findings involve features related to alignment, honesty, refusal,
+  ethics, or similar safety behaviors, consult with an AI safety research group
+  before publication (e.g., Anthropic, MIRI, ARC, Redwood Research, or your
+  institution's AI safety team).
+- Consider whether your publication could enable targeted ablation of safety
+  circuits.
+- Geometry, topology, and circuit structure without semantic labels are
+  generally safe to publish.
+
+This is dual-use research in the same category as biosecurity and nuclear
+physics. The interpretability community's long-term credibility depends on
+responsible handling of safety-relevant findings.
+
+---
+
+# Security Notice
+
+striatica is a localhost research tool. It runs a Vite dev server intended for
+local exploration only. No authentication, rate limiting, or input sanitization
+has been implemented. Please do not expose it to the public internet as-is.
+
+---
+
+# Tech Stack
+
+| Layer        | Tech                                                                    |
+| ------------ | ----------------------------------------------------------------------- |
+| 3D rendering | React Three Fiber + Three.js + custom GLSL shaders                      |
+| UI           | React 19 + TypeScript + Tailwind CSS 4                                  |
+| State        | Zustand 5                                                               |
+| Pipeline     | Python 3.12 + SAELens + TransformerLens + scikit-learn + UMAP + HDBSCAN |
+| Build        | Vite 7 (frontend), Poetry 2.x (striatica)                               |
+
+# Operation
 
 ### What `striat demo` does
 
@@ -132,10 +191,10 @@ it finishes.
 | `--sae-release` | SAELens release name                  | `gpt2-small-res-jb`       |
 | `--sae-hook`    | TransformerLens hook point            | `blocks.6.hook_resid_pre` |
 
-| Optional               | Description                            | Default |
-| ---------------------- | -------------------------------------- | ------- |
-| `--num-batches`        | Neuronpedia S3 batch count             | 24      |
-| `--features-per-batch` | Features per S3 batch                  | 1024    |
+| Optional               | Description                                | Default |
+| ---------------------- | ------------------------------------------ | ------- |
+| `--num-batches`        | Neuronpedia S3 batch count                 | 24      |
+| `--features-per-batch` | Features per S3 batch                      | 1024    |
 | `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu` | `auto`  |
 | `--json-export`        | Export JSON only, no frontend instructions | off     |
 
@@ -148,10 +207,12 @@ To find the right values for your model, check the
 SAELens supports multiple hook point formats depending on the model and release:
 
 **TransformerLens hook points** (most common):
+
 - `blocks.{N}.hook_resid_pre` — before residual stream at layer N
 - `blocks.{N}.hook_resid_post` — after residual stream at layer N
 
 **Newer canonical releases** (SAELens standardized format):
+
 - `layer_{N}/width_{K}k/canonical` — e.g., `layer_6/width_16k/canonical`
 
 Check the SAELens documentation or Neuronpedia for your model's available hook
@@ -289,11 +350,11 @@ in a VM without GPU passthrough or on a system without a supported GPU, the
 pipeline falls back to `cpu` — everything still works, just slower for larger
 models.
 
-| System                              | Device  |
-| ----------------------------------- | ------- |
-| NVIDIA GPU (native or passthrough)  | `cuda`  |
-| Apple Silicon (M1/M2/M3/M4)        | `mps`   |
-| VM without GPU / CPU-only           | `cpu`   |
+| System                             | Device |
+| ---------------------------------- | ------ |
+| NVIDIA GPU (native or passthrough) | `cuda` |
+| Apple Silicon (M1/M2/M3/M4)        | `mps`  |
+| VM without GPU / CPU-only          | `cpu`  |
 
 GPT-2 Small runs comfortably on CPU. Gemma 2B and larger models benefit
 significantly from GPU acceleration.
@@ -317,26 +378,6 @@ Node.js 18+).
 poetry run pytest tests/ -v                  # all fast tests
 poetry run pytest tests/ -v -m "not slow"    # skip model-download tests
 ```
-
----
-
-# Security Notice
-
-striatica is a localhost research tool. It runs a Vite dev server intended for
-local exploration only. No authentication, rate limiting, or input sanitization
-has been implemented. Please do not expose it to the public internet as-is.
-
----
-
-# Tech Stack
-
-| Layer        | Tech                                                                    |
-| ------------ | ----------------------------------------------------------------------- |
-| 3D rendering | React Three Fiber + Three.js + custom GLSL shaders                      |
-| UI           | React 19 + TypeScript + Tailwind CSS 4                                  |
-| State        | Zustand 5                                                               |
-| Pipeline     | Python 3.12 + SAELens + TransformerLens + scikit-learn + UMAP + HDBSCAN |
-| Build        | Vite 7 (frontend), Poetry 2.x (striatica)                               |
 
 ---
 

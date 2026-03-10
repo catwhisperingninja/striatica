@@ -21,6 +21,7 @@ def prepare_json(
     growth_curves: list[dict] | None = None,
     model: str = "gpt2-small",
     layer: str = "6-res-jb",
+    redact_semantics: bool = False,
 ) -> dict:
     """Assemble final JSON combining 3D coords, clusters, and metadata."""
     n = len(coords)
@@ -43,15 +44,20 @@ def prepare_json(
     print(f"    Loaded {len(feature_meta):,} feature records")
 
     # Load explanations
-    print(f"    Loading explanations from {explanations_jsonl.name}...")
-    explanations = {}
-    with open(explanations_jsonl) as f:
-        for line in f:
-            d = json.loads(line)
-            idx = int(d["index"])
-            if idx not in explanations:
-                explanations[idx] = d.get("description", "")
-    print(f"    Loaded {len(explanations):,} explanations")
+    if redact_semantics:
+        print(f"    ⚠  REDACTING semantic labels (model not in public tier)")
+        print(f"    Skipping explanation loading — output will contain geometry only")
+        explanations = {}
+    else:
+        print(f"    Loading explanations from {explanations_jsonl.name}...")
+        explanations = {}
+        with open(explanations_jsonl) as f:
+            for line in f:
+                d = json.loads(line)
+                idx = int(d["index"])
+                if idx not in explanations:
+                    explanations[idx] = d.get("description", "")
+        print(f"    Loaded {len(explanations):,} explanations")
 
     # Flatten positions to interleaved array
     print(f"    Flattening {n:,} positions...")
@@ -101,6 +107,7 @@ def prepare_json(
         "clusterLabels": labels.tolist(),
         "clusters": clusters,
         "features": features,
+        "semanticsRedacted": redact_semantics,
     }
 
     # Add local dimension data if computed

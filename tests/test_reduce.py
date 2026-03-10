@@ -20,3 +20,12 @@ def test_reduce_to_3d_deterministic():
     a = reduce_to_3d(vectors, pca_dim=50, random_state=42)
     b = reduce_to_3d(vectors, pca_dim=50, random_state=42)
     np.testing.assert_array_equal(a, b)
+
+
+def test_reduce_to_3d_n_jobs():
+    """n_jobs parameter should be accepted and produce valid output."""
+    rng = np.random.default_rng(42)
+    vectors = rng.standard_normal((200, 768))
+    coords = reduce_to_3d(vectors, pca_dim=50, random_state=42, n_jobs=1)
+    assert coords.shape == (200, 3)
+    assert coords.dtype == np.float32

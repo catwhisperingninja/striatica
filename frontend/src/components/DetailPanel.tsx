@@ -42,7 +42,7 @@ export default function DetailPanel() {
         {dataset.model}@{dataset.layer}:{feature.index}
       </div>
 
-      {feature.explanation && (
+      {feature.explanation ? (
         <div className="mb-3.5">
           <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
             Explanation
@@ -51,7 +51,19 @@ export default function DetailPanel() {
             {feature.explanation}
           </div>
         </div>
-      )}
+      ) : dataset.semanticsRedacted ? (
+        <div className="mb-3.5 border border-red-900/40 rounded-md px-2.5 py-2 bg-red-950/20">
+          <div className="text-[10px] font-semibold text-red-400/80 uppercase tracking-wide mb-1">
+            Semantic Labels Redacted
+          </div>
+          <div className="text-[10px] text-red-300/60 leading-relaxed">
+            Feature explanations for this model are withheld by default.
+            Interpretability data applied to capable models can reveal
+            safety-relevant circuits. If published or ingested into training
+            data, this could enable circumvention of AI alignment mechanisms.
+          </div>
+        </div>
+      ) : null}
 
       <div className="mb-3.5">
         <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
