@@ -150,7 +150,7 @@ def cmd_demo(args: argparse.Namespace) -> None:
 def cmd_model(args: argparse.Namespace) -> None:
     """Generate data for a custom SAELens-compatible model."""
     from pipeline.banner import print_banner, STEP_EMOJIS
-    from pipeline.config import SAEConfig, DATA_DIR
+    from pipeline.config import SAEConfig, DATA_DIR, is_public_tier
 
     print_banner()
 
@@ -165,15 +165,25 @@ def cmd_model(args: argparse.Namespace) -> None:
         features_per_batch=args.features_per_batch,
     )
 
+    # Safety: determine whether semantic labels should be included
+    public = is_public_tier(cfg.model_id)
+    include_semantics = args.include_semantics if args.include_semantics else public
+    redact = not include_semantics
+
     print(f"  🧬  Model:       {cfg.model_id}")
     print(f"  📐  Layer:       {cfg.layer}")
     print(f"  🛰️  SAE release: {cfg.sae_release}")
     print(f"  🔗  SAE hook:    {cfg.sae_hook}")
     print(f"  ⚡  Features:    {cfg.num_batches * cfg.features_per_batch:,}")
     print(f"  🖥️  Device:      {device}")
+    if redact:
+        print(f"  🔒  Semantics:   REDACTED (model not in public tier)")
+        print(f"                   Use --include-semantics to override")
+    else:
+        print(f"  📖  Semantics:   included")
     print()
 
-    _run_process_pipeline(cfg, DATA_DIR, device=device)
+    _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact)
 
     dataset_file = f"{cfg.model_id}-{cfg.layer}.json"
     dataset_path = OUTPUT_DIR / dataset_file
@@ -190,7 +200,7 @@ def cmd_model(args: argparse.Namespace) -> None:
         print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
 
 
-def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu") -> None:
+def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_semantics: bool = False) -> None:
     """Run the full data pipeline for a given SAEConfig."""
     from pipeline.banner import step_header, step_done, step_cached
     from pipeline.download import download_features, download_explanations
@@ -267,6 +277,7 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu") -> None:
         coords, labels, features_path, explanations_path, output,
         local_dimensions=local_dims, dim_method="pr", growth_curves=growth_curves,
         model=cfg.model_id, layer=cfg.layer,
+        redact_semantics=redact_semantics,
     )
     step_done(time.time() - t0)
 
@@ -336,6 +347,12 @@ def main() -> None:
     p_model.add_argument("--features-per-batch", type=int, default=1024, help="Features per batch (default: 1024)")
     p_model.add_argument("--device", default="auto", help="Torch device: auto, cuda, mps, or cpu (default: auto)")
     p_model.add_argument("--json-export", action="store_true", help="Export JSON only, skip frontend launch instructions")
+    p_model.add_argument(
+        "--include-semantics", action="store_true", default=False,
+        help="Include semantic labels for non-public-tier models. "
+             "WARNING: Semantic labels for frontier models may contain safety-relevant "
+             "feature interpretations. Do not publish without institutional review.",
+    )
     p_model.set_defaults(func=cmd_model)
 
     # ── circuits ──
