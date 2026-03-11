@@ -38,14 +38,13 @@ Open the localhost URL, and you're exploring.
 
 # Responsible Use: Interpretability Safety
 
-**This tool can identify features involved in AI safety behaviors.**
+**This tool may likely identify features involved in AI safety behaviors.**
 
-When applied to capable models, striatica's pipeline generates semantic
-interpretations of individual features and circuits — including features that
-participate in alignment, honesty, refusal, and other safety-relevant behaviors.
-If these interpretations are published or enter model training data, they could
-be used to identify and circumvent safety mechanisms in current and future AI
-systems.
+Striatica's pipeline generates semantic interpretations of individual features 
+and circuits — including features that participate in alignment, honesty, refusal, 
+and other safety-relevant behaviors. If these interpretations are published or 
+enter model training data, theoretically they could be used to identify and circumvent safety 
+mechanisms in current and future AI systems.
 
 **What the pipeline does by default:**
 
@@ -59,22 +58,24 @@ scientifically useful) without the interpretation layer that maps features to
 human-readable meanings. This can be overridden with `--include-semantics`, but
 please read the following before doing so.
 
-**If you are publishing research using striatica:**
+**If you plan to publish research using striatica:**
 
 - Do not publish complete semantic mappings of safety-relevant features for
   capable models.
 - If your findings involve features related to alignment, honesty, refusal,
-  ethics, or similar safety behaviors, consult with an AI safety research group
+  ethics, or similar safety/alignment behaviors, consult with an AI safety research group
   before publication (e.g., Anthropic, MIRI, ARC, Redwood Research, or your
   institution's AI safety team).
 - Consider whether your publication could enable targeted ablation of safety
   circuits.
+- Consider reviewing any screenshots for sensitive data.
 - Geometry, topology, and circuit structure without semantic labels are
   generally safe to publish.
 
-This is dual-use research in the same category as biosecurity and nuclear
-physics. The interpretability community's long-term credibility depends on
-responsible handling of safety-relevant findings.
+At this time my understanding is that it is wise to consider this dual-use research in the same category as biosecurity and nuclear
+physics. The interpretability community depends on responsible handling of safety-relevant findings. 
+
+Not everything has been scientifically validated, so there is always the chance that I could be overstating things. I feel it's better safe than sorry, however, and naturally am open to suggestions as things progress.
 
 ---
 
