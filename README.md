@@ -42,8 +42,8 @@ Open the localhost URL, and you're exploring.
 
 Striatica's pipeline generates semantic interpretations of individual features 
 and circuits — including features that participate in alignment, honesty, refusal, 
-and other safety-relevant behaviors. If these interpretations are published or 
-enter model training data, theoretically they could be used to identify and circumvent safety 
+and other safety-relevant behaviors. If these interpretations are published, 
+enter model training data, or reviewable by models themselves, theoretically they could be used to identify and circumvent safety 
 mechanisms in current and future AI systems.
 
 **What the pipeline does by default:**
@@ -68,14 +68,14 @@ please read the following before doing so.
   institution's AI safety team).
 - Consider whether your publication could enable targeted ablation of safety
   circuits.
-- Consider reviewing any screenshots for sensitive data.
-- Geometry, topology, and circuit structure without semantic labels are
+- Audit outputs and screenshots for exposed semantic data prior to sharing.
+- Geometry, topology, and circuit structure without semantic labels appear
   generally safe to publish.
 
-At this time my understanding is that it is wise to consider this dual-use research in the same category as biosecurity and nuclear
-physics. The interpretability community depends on responsible handling of safety-relevant findings. 
+At this time, my understanding is that it is wise to consider this dual-use research in the same category as biosecurity and nuclear
+physics. I have been reaching out to experts and various groups since I made this repo public, seeking validation of the findings and assessment of the risk, with very little success. I'm studied enough to suspect there is a strong likelihood that some amount of data will require strict security controls. I'd rather be safe than sorry.
 
-Not everything has been scientifically validated, so there is always the chance that I could be overstating things. I feel it's better safe than sorry, however, and naturally am open to suggestions as things progress.
+Not everything has been scientifically validated, so there is always the chance that I could be overstating things. Naturally, I am open to feedback as things progress. Please open an issue or tag me in the discussion threads.
 
 ---
 
