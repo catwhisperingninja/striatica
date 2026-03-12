@@ -4,6 +4,9 @@
 
 A geometric atlas for machine intelligence.
 
+<img width="3200" height="1200" alt="striatica-banner_v3_sat" src="https://github.com/user-attachments/assets/1ac347c6-67bc-4346-8227-1bc84ac20bbe" />
+
+
 > **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
 > [Zenodo](https://doi.org/10.5281/zenodo.18848240)
 
