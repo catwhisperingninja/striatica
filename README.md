@@ -1,15 +1,14 @@
 # striatica
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18848240.svg)](https://doi.org/10.5281/zenodo.18848240)
+> **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
+> [Zenodo](https://doi.org/10.5281/zenodo.18848240)
 
 A geometric atlas for machine intelligence.
 
 <img width="3200" height="1200" alt="striatica-banner_v3_sat" src="https://github.com/user-attachments/assets/1ac347c6-67bc-4346-8227-1bc84ac20bbe" />
 
-
-> **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
-> [Zenodo](https://doi.org/10.5281/zenodo.18848240)
-
+# Screenshots
 ![Default view](img/default-reset%20view.png) _Default view._
 
 ![Example view of a feature, a circuit, and the local dimension heatmap display.](img/5781-circview-dim.png)
