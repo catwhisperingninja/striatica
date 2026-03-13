@@ -97,6 +97,7 @@ coverage/
 ##############################
 data/
 docs/**
+img/**
 
 ##############################
 # Video / Remotion (local only — never pushed)
