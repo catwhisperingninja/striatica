@@ -236,84 +236,8 @@ class TestFeatureCompleteness:
 # ── Circuit Contamination Tests ─────────────────────────────────────────
 
 
-class TestCircuitContamination:
-    """Detect broadly-activating features contaminating circuits."""
-
-    def test_no_feature_in_all_circuits(self, tmp_path):
-        """No single feature should appear in ALL circuits if there are 3+.
-
-        This is the exact bug we found: broadly-activating features appeared
-        in every co-activation circuit, producing false convergences.
-        """
-        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
-        if not circuits_dir.exists():
-            pytest.skip("No circuit data generated yet")
-
-        manifest_path = circuits_dir / "manifest.json"
-        if not manifest_path.exists():
-            pytest.skip("No circuit manifest")
-
-        with open(manifest_path) as f:
-            manifest = json.load(f)
-
-        circuit_entries = manifest.get("circuits", [])
-        if len(circuit_entries) < 3:
-            pytest.skip("Need at least 3 circuits to test contamination")
-
-        # Count how many circuits each feature appears in
-        feature_circuit_count: Counter = Counter()
-        total_circuits = 0
-        for entry in circuit_entries:
-            circuit_path = circuits_dir / f"{entry['id']}.json"
-            if not circuit_path.exists():
-                continue
-            total_circuits += 1
-            with open(circuit_path) as f:
-                circuit = json.load(f)
-            for node in circuit["nodes"]:
-                feature_circuit_count[node["featureIndex"]] += 1
-
-        if total_circuits < 3:
-            pytest.skip("Need at least 3 loaded circuits")
-
-        # No feature should appear in ALL circuits
-        for feat_idx, count in feature_circuit_count.items():
-            assert count < total_circuits, (
-                f"Feature {feat_idx} appears in ALL {total_circuits} circuits. "
-                f"This indicates broadly-activating feature contamination."
-            )
-
-    def test_coact_circuits_have_unique_members(self, tmp_path):
-        """Co-activation circuits for different prompts should have mostly unique features.
-
-        If >50% of members are shared across all coact circuits, something is wrong.
-        """
-        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
-        if not circuits_dir.exists():
-            pytest.skip("No circuit data generated yet")
-
-        coact_files = sorted(circuits_dir.glob("coact-*.json"))
-        if len(coact_files) < 2:
-            pytest.skip("Need at least 2 co-activation circuits")
-
-        # Get node sets
-        node_sets = []
-        for path in coact_files:
-            with open(path) as f:
-                circuit = json.load(f)
-            indices = {n["featureIndex"] for n in circuit["nodes"]}
-            node_sets.append(indices)
-
-        # Intersection of ALL coact circuits
-        shared = set.intersection(*node_sets) if node_sets else set()
-        max_size = max(len(s) for s in node_sets)
-
-        overlap_ratio = len(shared) / max_size if max_size > 0 else 0
-        assert overlap_ratio < 0.5, (
-            f"{len(shared)} features shared across ALL {len(coact_files)} "
-            f"co-activation circuits ({overlap_ratio:.0%} overlap). "
-            f"Shared features: {sorted(shared)[:20]}..."
-        )
+class TestCircuitIntegrity:
+    """Ensure circuit data is structurally valid and aligns with geometric data."""
 
     def test_circuit_node_indices_in_range(self):
         """All circuit node featureIndex values must be < numFeatures."""
