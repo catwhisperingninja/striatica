@@ -27,6 +27,21 @@ def prepare_json(
     n = len(coords)
     _t_start = _time.monotonic()
 
+    # ── Validation assertions ──
+    if coords.ndim != 2 or coords.shape[1] != 3:
+        raise ValueError(f"coords must be (n, 3), got {coords.shape}")
+    if labels.shape != (n,):
+        raise ValueError(
+            f"labels length {len(labels)} does not match coords length {n}"
+        )
+    if local_dimensions is not None and local_dimensions.shape != (n,):
+        raise ValueError(
+            f"local_dimensions length {len(local_dimensions)} does not match "
+            f"coords length {n}"
+        )
+    if not np.all(np.isfinite(coords)):
+        raise ValueError("coords contains NaN or Inf values")
+
     # Load feature metadata
     print(f"    Loading feature metadata from {features_jsonl.name}...")
     feature_meta = {}
@@ -42,6 +57,10 @@ def prepare_json(
                 "negTokens": d.get("neg_str", [])[:3],
             }
     print(f"    Loaded {len(feature_meta):,} feature records")
+    if len(feature_meta) < n:
+        print(f"    ⚠  WARNING: Only {len(feature_meta):,} feature records for "
+              f"{n:,} coordinates — {n - len(feature_meta):,} features will have "
+              f"empty metadata")
 
     # Load explanations
     if redact_semantics:

@@ -9,6 +9,29 @@ from pathlib import Path
 import numpy as np
 
 
+def _load_global_activation_frequencies(
+    features_jsonl: str | Path | None,
+) -> dict[int, float]:
+    """Load frac_nonzero (global activation frequency) from features JSONL.
+
+    Returns:
+        Dict mapping feature index to frac_nonzero (0.0–1.0).
+        Empty dict if features_jsonl is None or doesn't exist.
+    """
+    if features_jsonl is None:
+        return {}
+    path = Path(features_jsonl)
+    if not path.exists():
+        return {}
+    freqs: dict[int, float] = {}
+    with open(path) as f:
+        for line in f:
+            d = json.loads(line)
+            idx = int(d["index"])
+            freqs[idx] = float(d.get("frac_nonzero", 0))
+    return freqs
+
+
 def extract_coactivation_circuit(
     prompt: str,
     model_name: str = "gpt2",
@@ -16,6 +39,9 @@ def extract_coactivation_circuit(
     sae_hook: str = "blocks.6.hook_resid_pre",
     top_k_features: int = 30,
     min_coactivation: float = 0.1,
+    max_breadth_ratio: float = 0.5,
+    max_global_freq: float = 0.01,
+    features_jsonl: str | Path | None = None,
     device: str = "cpu",
 ) -> dict:
     """Run GPT-2 + SAE on a prompt and extract co-activation circuits.
@@ -23,9 +49,19 @@ def extract_coactivation_circuit(
     Steps:
     1. Forward pass through GPT-2 via TransformerLens
     2. Encode residual stream activations through SAE
-    3. Find top-k features by peak activation
-    4. Build co-activation graph via Jaccard similarity over token positions
-    5. Assign roles by activation breadth
+    3. Pre-filter broadly-activating features (global freq + per-prompt breadth)
+    4. Find top-k features by peak activation
+    5. Build co-activation graph via Jaccard similarity over token positions
+    6. Assign roles by activation breadth
+
+    Args:
+        max_breadth_ratio: Max fraction of prompt tokens a feature can fire on
+            before being excluded (per-prompt filter). Default 0.5 (50%).
+        max_global_freq: Max frac_nonzero from corpus-level stats. Features
+            activating on more than this fraction of all tokens are excluded.
+            Default 0.01 (1%). Requires features_jsonl to be provided.
+        features_jsonl: Path to features JSONL with frac_nonzero stats.
+            If None, only per-prompt breadth filtering is used.
 
     Returns:
         Dict matching CircuitData schema.
@@ -36,6 +72,13 @@ def extract_coactivation_circuit(
         raise ValueError(f"top_k_features must be >= 1, got {top_k_features}")
     if not 0 <= min_coactivation <= 1:
         raise ValueError(f"min_coactivation must be in [0, 1], got {min_coactivation}")
+    if not 0 < max_breadth_ratio <= 1:
+        raise ValueError(f"max_breadth_ratio must be in (0, 1], got {max_breadth_ratio}")
+    if not 0 < max_global_freq <= 1:
+        raise ValueError(f"max_global_freq must be in (0, 1], got {max_global_freq}")
+
+    # Load global activation frequencies for pre-filtering
+    global_freqs = _load_global_activation_frequencies(features_jsonl)
 
     from transformer_lens import HookedTransformer
     from sae_lens import SAE
@@ -74,9 +117,47 @@ def extract_coactivation_circuit(
             "edges": [],
         }
 
+    # ── Filter broadly-activating features ──
+    # Two-layer defense:
+    # 1. Global frequency: exclude features with high frac_nonzero (corpus-level)
+    # 2. Per-prompt breadth: exclude features firing on too many token positions
+    #
+    # This prevents broadly-activating "stop word" features from contaminating
+    # every circuit with spurious cross-circuit convergences.
+    n_before = len(feature_activations)
+
+    # Layer 1: Global activation frequency filter
+    if global_freqs:
+        globally_filtered = {
+            idx: positions
+            for idx, positions in feature_activations.items()
+            if global_freqs.get(idx, 0) <= max_global_freq
+        }
+        n_global_removed = n_before - len(globally_filtered)
+        if n_global_removed > 0:
+            print(f"    Filtered {n_global_removed} features with frac_nonzero > {max_global_freq}")
+    else:
+        globally_filtered = feature_activations
+
+    # Layer 2: Per-prompt breadth filter
+    breadth_threshold = max(1, int(seq_len * max_breadth_ratio))
+    narrowed = {
+        idx: positions
+        for idx, positions in globally_filtered.items()
+        if len(positions) <= breadth_threshold
+    }
+    n_breadth_removed = len(globally_filtered) - len(narrowed)
+    if n_breadth_removed > 0:
+        print(f"    Filtered {n_breadth_removed} features firing on > {max_breadth_ratio:.0%} of tokens")
+
+    # Fall back to unfiltered if filtering would leave us with nothing
+    if not narrowed:
+        print("    WARNING: All features filtered out, falling back to unfiltered")
+        narrowed = feature_activations
+
     peak_acts = {
         idx: max(a for a, _ in positions)
-        for idx, positions in feature_activations.items()
+        for idx, positions in narrowed.items()
     }
     top_features = sorted(peak_acts, key=lambda x: peak_acts[x], reverse=True)[:top_k_features]
     top_set = set(top_features)

@@ -25,6 +25,13 @@ def reduce_to_3d(
     Returns:
         (n_features, 3) float32 array of 3D coordinates
     """
+    if not np.all(np.isfinite(vectors)):
+        n_bad = (~np.isfinite(vectors)).any(axis=1).sum()
+        raise ValueError(
+            f"Input vectors contain NaN/Inf values ({n_bad} rows affected). "
+            f"Check upstream data pipeline."
+        )
+
     print(f"  PCA: {vectors.shape[1]}D -> {pca_dim}D...")
     pca = PCA(n_components=pca_dim, random_state=random_state)
     reduced = pca.fit_transform(vectors)
@@ -41,6 +48,13 @@ def reduce_to_3d(
         n_jobs=n_jobs,
     )
     coords = umap.fit_transform(reduced).astype(np.float32)
+
+    if not np.all(np.isfinite(coords)):
+        n_bad = (~np.isfinite(coords)).any(axis=1).sum()
+        raise ValueError(
+            f"UMAP output contains NaN/Inf values ({n_bad} rows). "
+            f"This usually means degenerate input vectors."
+        )
 
     # Center and scale to [-1, 1] range (copy to avoid mutating UMAP output)
     coords = coords - coords.mean(axis=0)

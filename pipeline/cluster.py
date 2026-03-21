@@ -20,6 +20,13 @@ def cluster_points(
     Returns:
         (n,) int array of cluster labels (-1 = noise/uncategorized)
     """
+    if not np.all(np.isfinite(coords)):
+        n_bad = (~np.isfinite(coords)).any(axis=1).sum()
+        raise ValueError(
+            f"Input coords contain NaN/Inf values ({n_bad} rows). "
+            f"Check dimensionality reduction output."
+        )
+
     print(f"  HDBSCAN clustering {len(coords)} points...")
     clusterer = HDBSCAN(
         min_cluster_size=min_cluster_size,

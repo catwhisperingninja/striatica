@@ -89,6 +89,63 @@ def pick_seed_features(features_jsonl: Path, count: int = 5) -> list[int]:
     return seeds
 
 
+def _decontaminate_coact_circuits(circuits: dict[str, dict]) -> dict[str, dict]:
+    """Remove broadly-activating features that appear in ALL co-activation circuits.
+
+    Co-activation circuits use different prompts, so a feature appearing in
+    every single one is a noisy broadly-activating feature, not a prompt-specific
+    circuit member. We remove these and re-normalize activations.
+    """
+    if len(circuits) < 3:
+        return circuits
+
+    from collections import Counter
+
+    # Count how many circuits each feature appears in
+    feature_counts: Counter = Counter()
+    for circuit in circuits.values():
+        for node in circuit["nodes"]:
+            feature_counts[node["featureIndex"]] += 1
+
+    # Identify contaminating features (present in ALL circuits)
+    total = len(circuits)
+    contaminated = {feat for feat, count in feature_counts.items() if count >= total}
+
+    if not contaminated:
+        return circuits
+
+    print(f"\n  Cross-circuit decontamination: removing {len(contaminated)} "
+          f"broadly-activating features: {sorted(contaminated)}")
+
+    # Remove contaminated features from each circuit
+    cleaned = {}
+    for name, circuit in circuits.items():
+        clean_nodes = [n for n in circuit["nodes"] if n["featureIndex"] not in contaminated]
+        clean_node_set = {n["featureIndex"] for n in clean_nodes}
+        clean_edges = [
+            e for e in circuit["edges"]
+            if e["source"] in clean_node_set and e["target"] in clean_node_set
+        ]
+        # Re-normalize activations to 0-1
+        if clean_nodes:
+            max_act = max(n["activation"] for n in clean_nodes)
+            if max_act > 0:
+                for n in clean_nodes:
+                    n["activation"] = round(n["activation"] / max_act, 4)
+
+        cleaned[name] = {
+            **circuit,
+            "nodes": clean_nodes,
+            "edges": clean_edges,
+        }
+        removed = len(circuit["nodes"]) - len(clean_nodes)
+        if removed > 0:
+            print(f"    {name}: removed {removed} nodes, "
+                  f"{len(clean_nodes)} remain")
+
+    return cleaned
+
+
 def generate_batch_defaults() -> None:
     """Generate 5 co-activation + 5 similarity circuits."""
     cfg = GPT2_SMALL_L6
@@ -97,6 +154,7 @@ def generate_batch_defaults() -> None:
 
     # --- Co-activation circuits ---
     print("=== Generating co-activation circuits ===")
+    coact_circuits: dict[str, dict] = {}
     for name, prompt in DEFAULT_PROMPTS:
         circuit_name = f"coact-{name}"
         print(f"\n  Prompt: {prompt!r}")
@@ -108,21 +166,28 @@ def generate_batch_defaults() -> None:
                 sae_hook=cfg.sae_hook,
                 top_k_features=30,
                 min_coactivation=0.1,
+                features_jsonl=features_jsonl,
                 device="cpu",
             )
             circuit["name"] = circuit_name
-            write_circuit(circuit, circuit_name)
-            manifest_entries.append({
-                "id": circuit_name,
-                "name": circuit_name,
-                "type": "coactivation",
-                "description": circuit["description"],
-                "nodeCount": len(circuit["nodes"]),
-                "edgeCount": len(circuit["edges"]),
-                "path": f"/data/circuits/{circuit_name}.json",
-            })
+            coact_circuits[circuit_name] = circuit
         except Exception as e:
             print(f"  ERROR generating {circuit_name}: {e}")
+
+    # Cross-circuit decontamination: remove broadly-activating features
+    coact_circuits = _decontaminate_coact_circuits(coact_circuits)
+
+    for circuit_name, circuit in coact_circuits.items():
+        write_circuit(circuit, circuit_name)
+        manifest_entries.append({
+            "id": circuit_name,
+            "name": circuit_name,
+            "type": "coactivation",
+            "description": circuit["description"],
+            "nodeCount": len(circuit["nodes"]),
+            "edgeCount": len(circuit["edges"]),
+            "path": f"/data/circuits/{circuit_name}.json",
+        })
 
     # --- Similarity circuits ---
     print("\n=== Generating similarity circuits ===")
@@ -191,6 +256,7 @@ def main() -> None:
             sae_hook=cfg.sae_hook,
             top_k_features=args.top_k,
             min_coactivation=args.min_weight,
+            features_jsonl=features_jsonl if features_jsonl.exists() else None,
             device="cpu",
         )
         circuit["name"] = name
