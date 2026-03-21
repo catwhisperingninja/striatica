@@ -68,7 +68,9 @@ fi
 # ── Install Poetry + dependencies ──
 echo "  Installing dependencies..."
 if ! command -v poetry &>/dev/null; then
-    pip install --quiet poetry
+    # --break-system-packages needed for Ubuntu 24.04+ (PEP 668)
+    pip install --quiet poetry --break-system-packages 2>/dev/null \
+        || pip install --quiet poetry
 fi
 poetry install --extras ml --quiet
 

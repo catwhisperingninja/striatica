@@ -30,7 +30,7 @@ cd striatica
 docker build -t striatica-pipeline .
 
 # Run the GPT-2 Small demo
-docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
   model --np-id gpt2-small/6-res-jb
 ```
 
@@ -162,9 +162,9 @@ model with Neuronpedia feature data available for processing:
 
 ```bash
 # Docker
-docker run --name striatica-discover --rm striatica-pipeline \
+docker run -t --name striatica-discover --rm striatica-pipeline \
   discover --sae-types res
-docker run --name striatica-discover --rm striatica-pipeline \
+docker run -t --name striatica-discover --rm striatica-pipeline \
   discover --families gpt2,gemma2,llama
 
 # Poetry
@@ -182,10 +182,10 @@ auto-resolves the SAELens release name, hook point, and S3 batch count:
 
 ```bash
 # Docker
-docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
   model --np-id gpt2-small/6-res-jb
 
-docker run --name striatica-gemma --gpus all \
+docker run -t --name striatica-gemma --gpus all \
   -v $(pwd)/output:/app/output striatica-pipeline-gpu \
   model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
 
@@ -216,7 +216,7 @@ Process multiple models sequentially with resume capability:
 
 ```bash
 # Docker
-docker run --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
   batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb,gpt2-small/10-res-jb" \
   --continue-on-error
 
@@ -226,7 +226,7 @@ poetry run striat batch \
   --continue-on-error
 
 # Force reprocess even if output exists
-docker run --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
   batch --np-ids "..." --force
 ```
 
@@ -349,7 +349,7 @@ To run on any remote server and view results locally:
 
 ```bash
 # On remote server (Docker or Poetry — either works)
-docker run --name striatica-remote -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica-remote -v $(pwd)/output:/app/output striatica-pipeline \
   model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
 
 # Copy output to your local machine
