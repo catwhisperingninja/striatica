@@ -65,16 +65,15 @@ else
     cd striatica
 fi
 
-# ── Install Poetry + dependencies ──
+# ── Install dependencies ──
 echo "  Installing dependencies..."
-# Use a venv to sidestep PEP 668 (Ubuntu 24.04+) and PATH issues
+# Use a venv to sidestep PEP 668 (Ubuntu 24.04+)
+# --system-site-packages inherits Lambda's CUDA-enabled torch
 if [ ! -d ".venv" ]; then
-    # --system-site-packages inherits Lambda's CUDA-enabled torch
     python3 -m venv --system-site-packages .venv
 fi
 source .venv/bin/activate
-pip install --quiet poetry
-poetry install --extras ml --quiet
+pip install --quiet -e ".[ml]"
 
 # ── Create output dir ──
 mkdir -p output
@@ -93,11 +92,11 @@ echo ""
 if [[ -n "$NP_ID" && -z "$NP_IDS" ]]; then
     echo "  Processing: $NP_ID"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    poetry run striat model --np-id "$NP_ID" --device "$DEVICE" --json-export
+    striat model --np-id "$NP_ID" --device "$DEVICE" --json-export
 elif [[ -n "$NP_IDS" ]]; then
     echo "  Batch processing: $NP_IDS"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    poetry run striat batch --np-ids "$NP_IDS" --device "$DEVICE" --continue-on-error
+    striat batch --np-ids "$NP_IDS" --device "$DEVICE" --continue-on-error
 fi
 
 echo ""
