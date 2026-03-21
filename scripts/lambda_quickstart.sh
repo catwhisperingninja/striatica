@@ -67,13 +67,13 @@ fi
 
 # ── Install Poetry + dependencies ──
 echo "  Installing dependencies..."
-# Ensure ~/.local/bin is on PATH (pip installs binaries here)
-export PATH="$HOME/.local/bin:$PATH"
-if ! command -v poetry &>/dev/null; then
-    # --break-system-packages needed for Ubuntu 24.04+ (PEP 668)
-    pip install --quiet poetry --break-system-packages 2>/dev/null \
-        || pip install --quiet poetry
+# Use a venv to sidestep PEP 668 (Ubuntu 24.04+) and PATH issues
+if [ ! -d ".venv" ]; then
+    # --system-site-packages inherits Lambda's CUDA-enabled torch
+    python3 -m venv --system-site-packages .venv
 fi
+source .venv/bin/activate
+pip install --quiet poetry
 poetry install --extras ml --quiet
 
 # ── Create output dir ──

@@ -333,16 +333,6 @@ Scripts are included for running the pipeline on cloud GPU instances. Use
 
 A single A100 processes GPT-2 Small in ~2 minutes and Gemma 2B in ~20 minutes.
 
-### Azure
-
-```bash
-# Provisions a VM, runs the pipeline, downloads results
-./scripts/azure_quickstart.sh --gpu --np-id gemma-2-2b/12-gemmascope-res-16k
-
-# IMPORTANT: tear down when done to stop charges
-./scripts/azure_quickstart.sh --teardown
-```
-
 ### Remote compute, local visualization
 
 To run on any remote server and view results locally:
