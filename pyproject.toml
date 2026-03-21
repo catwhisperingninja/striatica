@@ -1,6 +1,6 @@
 [project]
 name = "striatica"
-version = "0.1.0"
+version = "0.2.0"
 description = "A geometric atlas for machine intelligence"
 authors = [
     {name = "spacecat",email = "25212708+spacecat@users.noreply.gitlab.com"}

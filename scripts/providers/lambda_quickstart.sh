@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────
-# striatica Lambda AI quick start
+# striatica Lambda AI quick start (Docker)
 #
 # Run this on a fresh Lambda AI GPU instance to process models.
-# Assumes: Ubuntu, NVIDIA GPU, CUDA drivers pre-installed (Lambda default).
+# Assumes: Docker + NVIDIA Container Toolkit pre-installed (Lambda default).
 #
 # Usage:
 #   # SSH into your Lambda instance, then:
@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 --np-id <id> | --np-ids <id1,id2,...>"
             echo ""
             echo "Lambda AI quick start for striatica preprocessing."
-            echo "Installs everything, runs the pipeline on GPU, outputs to ./output/"
+            echo "Builds Docker container, runs the pipeline on GPU, outputs to ./output/"
             exit 0
             ;;
         *) echo "Unknown: $1"; exit 1 ;;
@@ -41,7 +41,7 @@ fi
 
 echo ""
 echo "  ░▒▓  s t r i a t i c a  ≡≡≡≡≡  ▓▒░"
-echo "  Lambda AI Quick Start"
+echo "  Lambda AI Quick Start (Docker)"
 echo ""
 
 # ── Check GPU ──
@@ -65,45 +65,36 @@ else
     cd striatica
 fi
 
-# ── Install dependencies ──
-echo "  Installing dependencies..."
-# Use a venv to sidestep PEP 668 (Ubuntu 24.04+)
-# --system-site-packages inherits Lambda's CUDA-enabled torch
-if [ ! -d ".venv" ]; then
-    python3 -m venv --system-site-packages .venv
-fi
-source .venv/bin/activate
-pip install --quiet -e ".[ml]"
+# ── Build Docker image ──
+echo "  Building Docker image (this takes a few minutes the first time)..."
+docker build -f Dockerfile.gpu -t striatica-gpu .
 
 # ── Create output dir ──
 mkdir -p output
-
-# ── Detect device ──
-DEVICE="cpu"
-if python -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
-    DEVICE="cuda"
-    echo "  Using CUDA"
-else
-    echo "  Using CPU (no CUDA available)"
-fi
 
 # ── Run pipeline ──
 echo ""
 if [[ -n "$NP_ID" && -z "$NP_IDS" ]]; then
     echo "  Processing: $NP_ID"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    striat model --np-id "$NP_ID" --device "$DEVICE" --json-export
+    docker run --gpus all -t --name striatica-run --rm \
+        -v "$(pwd)/output:/app/output" \
+        striatica-gpu \
+        model --np-id "$NP_ID" --device cuda --json-export
 elif [[ -n "$NP_IDS" ]]; then
     echo "  Batch processing: $NP_IDS"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    striat batch --np-ids "$NP_IDS" --device "$DEVICE" --continue-on-error
+    docker run --gpus all -t --name striatica-run --rm \
+        -v "$(pwd)/output:/app/output" \
+        striatica-gpu \
+        batch --np-ids "$NP_IDS" --device cuda --continue-on-error
 fi
 
 echo ""
 echo "  ✅  Done!"
 echo "  Output files:"
-ls -lh frontend/public/data/*.json 2>/dev/null | sed 's/^/    /' || echo "    (check frontend/public/data/)"
+ls -lh output/*.json 2>/dev/null | sed 's/^/    /' || echo "    (check ./output/)"
 echo ""
 echo "  To download results to your local machine:"
-echo "    scp -r lambda-instance:~/striatica/frontend/public/data/*.json ./output/"
+echo "    scp -r lambda-instance:~/striatica/output/*.json ./output/"
 echo ""

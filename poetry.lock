@@ -4274,5 +4274,5 @@ ml = ["sae-lens", "torch", "transformer-lens", "transformers"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = "^3.12"
-content-hash = "d59acdd0b8534747a96b9a87cfc05a63e7ed207c4ee9cc08795e4f8bf05cfe80"
+python-versions = ">=3.12,<4.0"
+content-hash = "5e793b466b32de42f433301790e787c5e116836e07d3b8d128ed357c7e9a6128"
