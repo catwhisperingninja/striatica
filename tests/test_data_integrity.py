@@ -245,7 +245,7 @@ class TestCircuitContamination:
         This is the exact bug we found: broadly-activating features appeared
         in every co-activation circuit, producing false convergences.
         """
-        circuits_dir = Path("frontend/public/data/circuits")
+        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
         if not circuits_dir.exists():
             pytest.skip("No circuit data generated yet")
 
@@ -288,7 +288,7 @@ class TestCircuitContamination:
 
         If >50% of members are shared across all coact circuits, something is wrong.
         """
-        circuits_dir = Path("frontend/public/data/circuits")
+        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
         if not circuits_dir.exists():
             pytest.skip("No circuit data generated yet")
 
@@ -317,8 +317,8 @@ class TestCircuitContamination:
 
     def test_circuit_node_indices_in_range(self):
         """All circuit node featureIndex values must be < numFeatures."""
-        circuits_dir = Path("frontend/public/data/circuits")
-        dataset_path = Path("frontend/public/data")
+        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
+        dataset_path = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data"
 
         if not circuits_dir.exists():
             pytest.skip("No circuit data generated yet")
@@ -347,7 +347,7 @@ class TestCircuitContamination:
 
     def test_circuit_edge_indices_are_nodes(self):
         """All edge source/target must reference a node in the same circuit."""
-        circuits_dir = Path("frontend/public/data/circuits")
+        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
         if not circuits_dir.exists():
             pytest.skip("No circuit data generated yet")
 
@@ -369,7 +369,7 @@ class TestCircuitContamination:
 
     def test_no_duplicate_nodes_in_circuit(self):
         """Each feature should appear at most once per circuit."""
-        circuits_dir = Path("frontend/public/data/circuits")
+        circuits_dir = Path(__file__).resolve().parent.parent / "frontend" / "public" / "data" / "circuits"
         if not circuits_dir.exists():
             pytest.skip("No circuit data generated yet")
 
