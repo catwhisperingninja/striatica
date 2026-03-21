@@ -126,9 +126,9 @@ echo "  Setting up striatica on VM..."
 
 # Build the processing command
 if [[ -n "$NP_ID" && -z "$NP_IDS" ]]; then
-    PROCESS_CMD="--np-id $NP_ID"
-else
-    PROCESS_CMD="--np-ids '$NP_IDS'"
+    STRIAT_CMD="model --np-id $NP_ID"
+elif [[ -n "$NP_IDS" ]]; then
+    STRIAT_CMD="batch --np-ids '$NP_IDS' --continue-on-error"
 fi
 
 ssh -o StrictHostKeyChecking=no "striatica@$VM_IP" bash -s <<REMOTE_SCRIPT
@@ -161,7 +161,7 @@ fi
 
 # Run pipeline
 mkdir -p output
-poetry run striat model $PROCESS_CMD --device \$DEVICE --json-export
+poetry run striat $STRIAT_CMD --device \$DEVICE --json-export
 REMOTE_SCRIPT
 
 # ── Download results ──

@@ -49,10 +49,10 @@ def _find_port(start: int = 5173, attempts: int = 20) -> int:
 
 def _launch_frontend(port: int) -> None:
     """Install deps and start the Vite dev server on the given port."""
-    from pipeline.banner import STEP_EMOJIS
+    from pipeline.banner import info, separator
 
-    print(f"\n  {STEP_EMOJIS['frontend']}  Launching frontend → http://localhost:{port}")
-    print(f"  {'━' * 48}\n")
+    separator()
+    info("Frontend", f"http://localhost:{port}", emoji="🖥️")
 
     # Ensure pnpm is available
     if not shutil.which("pnpm"):
@@ -112,10 +112,14 @@ def _ask_yes_no(prompt: str, default: bool = True) -> bool:
 
 def cmd_demo(args: argparse.Namespace) -> None:
     """Run the GPT-2 Small demo end-to-end."""
-    from pipeline.banner import print_banner, step_header, step_done, step_cached, STEP_EMOJIS
+    from pipeline.banner import (
+        print_banner, step_header, step_done, step_cached,
+        detail, reset_step_counter,
+    )
     from pipeline.config import GPT2_SMALL_L6, DATA_DIR
 
     print_banner()
+    reset_step_counter()
 
     cfg = GPT2_SMALL_L6
     dataset_path = OUTPUT_DIR / f"{cfg.model_id}-{cfg.layer}.json"
@@ -125,22 +129,22 @@ def cmd_demo(args: argparse.Namespace) -> None:
     # Step 1: Generate point cloud data (skip if cached)
     if dataset_path.exists() and not args.regenerate:
         step_cached(dataset_path.name)
-        print("     (use --regenerate to rebuild)\n")
+        detail("(use --regenerate to rebuild)")
     else:
-        print(f"  🧬  First run detected — downloading ~2 GB from Neuronpedia S3\n")
+        detail("First run detected — downloading ~2 GB from Neuronpedia S3")
         _run_process_pipeline(cfg, DATA_DIR)
 
     # Step 2: Generate circuits
     if manifest_path.exists() and not args.regenerate:
         n_circuits = len(list(circuits_dir.glob("*.json"))) - 1
         step_cached(f"circuits ({n_circuits} circuits)")
-        print("     (use --regenerate to rebuild)\n")
+        detail("(use --regenerate to rebuild)")
     else:
         if _ask_yes_no("  🔗  Generate default circuits? (5 co-activation + 5 similarity)"):
             from scripts.generate_circuits import generate_batch_defaults
             generate_batch_defaults()
         else:
-            print("     Skipping circuit generation.")
+            detail("Skipping circuit generation.")
 
     # Step 3: Launch frontend
     port = args.port if args.port is not None else _find_port()
@@ -151,17 +155,18 @@ def cmd_demo(args: argparse.Namespace) -> None:
 
 def cmd_discover(args: argparse.Namespace) -> None:
     """Discover available models from SAELens + Neuronpedia."""
-    from pipeline.banner import print_banner
+    from pipeline.banner import print_banner, info, success
     from pipeline.config import DATA_DIR
     from pipeline.discovery import (
         discover_models, save_catalog, catalog_summary, generate_readme_table,
     )
 
     print_banner()
-    print("  🔍  Discovering models from SAELens registry...\n")
+    info("Discover", "Pulling SAELens registry...", emoji="🔍")
+    print()
 
-    sae_types = args.sae_types.split(",") if args.sae_types else None
-    model_families = args.families.split(",") if args.families else None
+    sae_types = [s.strip() for s in args.sae_types.split(",") if s.strip()] if args.sae_types else None
+    model_families = [f.strip() for f in args.families.split(",") if f.strip()] if args.families else None
 
     catalog = discover_models(
         probe_s3=args.probe_s3,
@@ -181,7 +186,7 @@ def cmd_discover(args: argparse.Namespace) -> None:
         summary = catalog_summary(catalog)
         print(summary)
 
-    print(f"\n  ✅  {len(catalog)} SAE configurations discovered")
+    success(f"{len(catalog)} SAE configurations discovered")
 
 
 # ── Model ──────────────────────────────────────────────────────────────
@@ -193,10 +198,14 @@ def cmd_model(args: argparse.Namespace) -> None:
     or a Neuronpedia ID shorthand (--np-id "gpt2-small/6-res-jb") which
     auto-resolves all parameters from the SAELens registry.
     """
-    from pipeline.banner import print_banner, STEP_EMOJIS
+    from pipeline.banner import (
+        print_banner, info, success, error, warn, detail, separator,
+        reset_step_counter,
+    )
     from pipeline.config import SAEConfig, DATA_DIR, is_public_tier
 
     print_banner()
+    reset_step_counter()
 
     device = _detect_device(args.device)
 
@@ -213,8 +222,8 @@ def cmd_model(args: argparse.Namespace) -> None:
             features_per_batch=args.features_per_batch,
         )
     else:
-        print("  ❌  Provide either --np-id or (--sae-release + --sae-hook)")
-        print("     Run 'striat discover' to see available models.")
+        error("Provide either --np-id or (--sae-release + --sae-hook)")
+        detail("Run 'striat discover' to see available models.")
         sys.exit(1)
 
     # Safety: determine whether semantic labels should be included
@@ -222,17 +231,17 @@ def cmd_model(args: argparse.Namespace) -> None:
     include_semantics = args.include_semantics if args.include_semantics else public
     redact = not include_semantics
 
-    print(f"  🧬  Model:       {cfg.model_id}")
-    print(f"  📐  Layer:       {cfg.layer}")
-    print(f"  🛰️  SAE release: {cfg.sae_release}")
-    print(f"  🔗  SAE hook:    {cfg.sae_hook}")
-    print(f"  ⚡  Features:    {cfg.num_batches * cfg.features_per_batch:,}")
-    print(f"  🖥️  Device:      {device}")
+    info("Model", cfg.model_id, emoji="🧬")
+    info("Layer", cfg.layer, emoji="📐")
+    info("SAE release", cfg.sae_release, emoji="🛰️")
+    info("SAE hook", cfg.sae_hook, emoji="🔗")
+    info("Features", f"{cfg.num_batches * cfg.features_per_batch:,}", emoji="⚡")
+    info("Device", device, emoji="🖥️")
     if redact:
-        print(f"  🔒  Semantics:   REDACTED (model not in public tier)")
-        print(f"                   Use --include-semantics to override")
+        info("Semantics", "REDACTED (model not in public tier)", emoji="🔒")
+        detail("Use --include-semantics to override")
     else:
-        print(f"  📖  Semantics:   included")
+        info("Semantics", "included", emoji="📖")
     print()
 
     _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact)
@@ -241,15 +250,15 @@ def cmd_model(args: argparse.Namespace) -> None:
     dataset_path = OUTPUT_DIR / dataset_file
 
     if args.json_export:
-        print(f"\n  ✅  JSON exported: {dataset_path}")
-        print(f"  Transfer to local machine:")
-        print(f"    scp remote:{dataset_path} ./frontend/public/data/")
-        print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
+        success(f"JSON exported: {dataset_path}")
+        detail("Transfer to local machine:")
+        detail(f"scp remote:{dataset_path} ./frontend/public/data/")
+        detail(f"Then open: http://localhost:5173/?dataset={dataset_file}")
     else:
-        print(f"\n  ✅  Output: {dataset_path}")
-        print(f"  Launch the frontend with:")
-        print(f"    cd frontend && pnpm dev")
-        print(f"  Then open: http://localhost:5173/?dataset={dataset_file}")
+        success(f"Output: {dataset_path}")
+        detail("Launch the frontend with:")
+        detail("cd frontend && pnpm dev")
+        detail(f"Then open: http://localhost:5173/?dataset={dataset_file}")
 
 
 def _resolve_from_np_id(np_id: str, args: argparse.Namespace):
@@ -261,15 +270,17 @@ def _resolve_from_np_id(np_id: str, args: argparse.Namespace):
     from pipeline.config import SAEConfig
     from pipeline.discovery import _load_saelens_registry, _probe_s3_batch_count
 
+    from pipeline.banner import info, error, warn, detail
+
     parts = np_id.split("/", 1)
     if len(parts) != 2:
-        print(f"  ❌  Invalid Neuronpedia ID format: '{np_id}'")
-        print(f"     Expected: 'model-id/layer-id' (e.g. 'gpt2-small/6-res-jb')")
+        error(f"Invalid Neuronpedia ID format: '{np_id}'")
+        detail("Expected: 'model-id/layer-id' (e.g. 'gpt2-small/6-res-jb')")
         sys.exit(1)
 
     np_model_id, np_layer = parts
 
-    print(f"  🔍  Resolving Neuronpedia ID: {np_id}")
+    info("Resolving", np_id, emoji="🔍")
     registry = _load_saelens_registry()
 
     # Search registry for matching neuronpedia_id
@@ -288,20 +299,20 @@ def _resolve_from_np_id(np_id: str, args: argparse.Namespace):
             break
 
     if not match_release:
-        print(f"  ❌  Neuronpedia ID '{np_id}' not found in SAELens registry.")
-        print(f"     Run 'striat discover' to see available models.")
+        error(f"Neuronpedia ID '{np_id}' not found in SAELens registry.")
+        detail("Run 'striat discover' to see available models.")
         sys.exit(1)
 
-    print(f"  ✅  Found: release={match_release}, hook={match_sae_id}")
+    info("Found", f"release={match_release}, hook={match_sae_id}", emoji="✅")
 
     # Probe S3 for batch count
-    print(f"  🛰️  Probing S3 batch count...")
+    info("Probing", "S3 batch count...", emoji="🛰️")
     num_batches = _probe_s3_batch_count(np_model_id, np_layer)
     if num_batches is None:
-        print(f"  ⚠️  Could not probe S3 batches. Using --num-batches={args.num_batches}")
+        warn(f"Could not probe S3 batches. Using --num-batches={args.num_batches}")
         num_batches = args.num_batches
 
-    print(f"     {num_batches} batches found")
+    detail(f"{num_batches} batches found")
 
     return SAEConfig(
         model_id=np_model_id,
@@ -317,7 +328,10 @@ def _resolve_from_np_id(np_id: str, args: argparse.Namespace):
 
 def cmd_batch(args: argparse.Namespace) -> None:
     """Process multiple models sequentially."""
-    from pipeline.banner import print_banner
+    from pipeline.banner import (
+        print_banner, info, success, error, warn, detail,
+        separator, reset_step_counter,
+    )
     from pipeline.config import DATA_DIR, SAEConfig, is_public_tier
     from pipeline.discovery import load_catalog, ModelInfo, _probe_s3_batch_count
 
@@ -328,7 +342,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
     # Load model list from catalog or explicit np-ids
     if args.catalog:
         catalog = load_catalog(Path(args.catalog))
-        print(f"  📋  Loaded {len(catalog)} models from catalog")
+        info("Catalog", f"{len(catalog)} models loaded", emoji="📋")
     elif args.np_ids:
         # Parse comma-separated Neuronpedia IDs
         np_id_list = [x.strip() for x in args.np_ids.split(",") if x.strip()]
@@ -342,9 +356,11 @@ def cmd_batch(args: argparse.Namespace) -> None:
                     neuronpedia_id=np_id, np_model_id=parts[0], np_layer=parts[1],
                     conversion_func="",
                 ))
-        print(f"  📋  {len(catalog)} models specified")
+            else:
+                warn(f"Skipping invalid Neuronpedia ID: '{np_id}' (expected 'model/layer')")
+        info("Batch", f"{len(catalog)} models specified", emoji="📋")
     else:
-        print("  ❌  Provide --catalog <path> or --np-ids 'id1,id2,...'")
+        error("Provide --catalog <path> or --np-ids 'id1,id2,...'")
         sys.exit(1)
 
     results = []
@@ -352,18 +368,19 @@ def cmd_batch(args: argparse.Namespace) -> None:
 
     for i, model_info in enumerate(catalog, 1):
         np_id = model_info.neuronpedia_id
-        print(f"\n  {'━' * 48}")
-        print(f"  📦  Model {i}/{len(catalog)}: {np_id}")
-        print(f"  {'━' * 48}")
+        separator()
+        info("Model", f"{i}/{len(catalog)}: {np_id}", emoji="📦")
 
         # Check for existing output (resume capability)
         output_file = OUTPUT_DIR / f"{model_info.np_model_id}-{model_info.np_layer}.json"
         if output_file.exists() and not args.force:
-            print(f"  💾  Output exists, skipping (use --force to reprocess)")
+            info("Status", "cached, skipping (use --force to reprocess)", emoji="💾")
             results.append((np_id, "skipped", 0))
             continue
 
         try:
+            reset_step_counter()
+
             # Resolve full config via registry lookup
             class _FakeArgs:
                 num_batches = args.num_batches
@@ -379,38 +396,38 @@ def cmd_batch(args: argparse.Namespace) -> None:
 
             results.append((np_id, "success", elapsed))
         except Exception as e:
-            print(f"  ❌  Failed: {e}")
+            error(f"Failed: {e}")
             failed.append((np_id, str(e)))
             results.append((np_id, "failed", 0))
             if not args.continue_on_error:
-                print("  Stopping batch (use --continue-on-error to skip failures)")
+                detail("Stopping batch (use --continue-on-error to skip failures)")
                 break
 
     # Summary
-    print(f"\n  {'━' * 48}")
-    print(f"  📊  Batch Summary")
-    print(f"  {'━' * 48}")
+    separator()
+    info("Summary", "Batch Results", emoji="📊")
+    separator()
     for np_id, status, elapsed in results:
         if status == "success":
             m, s = divmod(int(elapsed), 60)
-            print(f"  ✅  {np_id} — {m}m {s}s")
+            success(f"{np_id} — {m}m {s}s")
         elif status == "skipped":
-            print(f"  💾  {np_id} — skipped (cached)")
+            info("Cached", np_id, emoji="💾")
         else:
-            print(f"  ❌  {np_id} — failed")
+            error(f"{np_id} — failed")
 
     total_time = sum(e for _, _, e in results)
     m, s = divmod(int(total_time), 60)
-    print(f"\n  Total processing time: {m}m {s}s")
+    detail(f"Total processing time: {m}m {s}s")
     if failed:
-        print(f"  ⚠️  {len(failed)} failures:")
+        warn(f"{len(failed)} failures:")
         for np_id, err in failed:
-            print(f"     {np_id}: {err}")
+            detail(f"{np_id}: {err}")
 
 
 def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_semantics: bool = False) -> None:
     """Run the full data pipeline for a given SAEConfig."""
-    from pipeline.banner import step_header, step_done, step_cached
+    from pipeline.banner import step_header, step_done, step_cached, detail, separator, success
     from pipeline.download import download_features, download_explanations
     from pipeline.vectors import load_decoder_vectors
     from pipeline.reduce import reduce_to_3d
@@ -447,7 +464,7 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     t0 = time.time()
     step_header("vectors", "Step 2/6 · Loading SAELens decoder vectors")
     vectors = load_decoder_vectors(cfg.sae_release, cfg.sae_hook, device=device)
-    print(f"     {vectors.shape[0]:,} vectors × {vectors.shape[1]} dimensions")
+    detail(f"{vectors.shape[0]:,} vectors × {vectors.shape[1]} dimensions")
     step_done(time.time() - t0)
 
     # Step 3: Dimensionality reduction
@@ -461,7 +478,7 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     step_header("cluster", "Step 4/6 · HDBSCAN clustering")
     labels = cluster_points(coords)
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    print(f"     {n_clusters} clusters found")
+    detail(f"{n_clusters} clusters found")
     step_done(time.time() - t0)
 
     # Step 5: Local dimension estimation
@@ -512,10 +529,10 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     with open(metadata_path, "w") as _f:
         _json.dump(metadata, _f, indent=2)
 
-    print(f"\n  {'━' * 48}")
-    print(f"  ✅  Complete · {minutes}m {seconds}s")
-    print(f"  📁  {output}")
-    print(f"  📋  {metadata_path}")
+    separator()
+    success(f"Complete · {minutes}m {seconds}s")
+    detail(f"📁  {output}")
+    detail(f"📋  {metadata_path}")
 
 
 # ── Circuits ─────────────────────────────────────────────────────────────
