@@ -67,6 +67,8 @@ fi
 
 # ── Install Poetry + dependencies ──
 echo "  Installing dependencies..."
+# Ensure ~/.local/bin is on PATH (pip installs binaries here)
+export PATH="$HOME/.local/bin:$PATH"
 if ! command -v poetry &>/dev/null; then
     # --break-system-packages needed for Ubuntu 24.04+ (PEP 668)
     pip install --quiet poetry --break-system-packages 2>/dev/null \
