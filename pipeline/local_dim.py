@@ -136,12 +136,17 @@ def _vgt_single(d_i: np.ndarray, n_radii: int, return_curve: bool) -> tuple[floa
     log_r = np.log(radii)
     log_v = np.array([np.log(max(np.searchsorted(d_i, r), 1)) for r in radii])
 
-    valid = log_v > 0
+    # Filter out NaN/inf values from degenerate inputs
+    finite = np.isfinite(log_r) & np.isfinite(log_v)
+    valid = finite & (log_v > 0)
     if valid.sum() < 3:
         return 0.0, empty_curve if return_curve else None
 
     A = np.vstack([log_r[valid], np.ones(valid.sum())]).T
-    result = np.linalg.lstsq(A, log_v[valid], rcond=None)
+    try:
+        result = np.linalg.lstsq(A, log_v[valid], rcond=None)
+    except np.linalg.LinAlgError:
+        return 0.0, empty_curve if return_curve else None
     slope = result[0][0]
     intercept = result[0][1]
     dim = max(slope, 0.0)
