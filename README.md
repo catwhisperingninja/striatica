@@ -18,6 +18,28 @@ _Example view of a feature, a circuit, and the local dimension heatmap display._
 
 # Quick Start
 
+### Docker (recommended)
+
+No Python, no Poetry, no dependency headaches. Just Docker.
+
+```bash
+git clone https://github.com/catwhisperingninja/striatica.git
+cd striatica
+
+# Build the container
+docker build -t striatica-pipeline .
+
+# Run the GPT-2 Small demo
+docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+  model --np-id gpt2-small/6-res-jb
+```
+
+The container image is built for `amd64` and `arm64` (Intel/AMD and Apple
+Silicon both work). If you're on something exotic, build from the Dockerfile and
+it should just work.
+
+### Poetry (for development or if you want the interactive frontend)
+
 You need Python 3.12+, [Poetry 2.x](https://python-poetry.org/), and Node.js
 18+.
 
@@ -34,9 +56,7 @@ poetry run striat demo
 
 `striat demo` walks you through everything: builds the dataset if it doesn't
 exist, optionally generates circuits, finds an open port, and starts the
-frontend.
-
-Open the localhost URL, and you're exploring.
+frontend. Open the localhost URL, and you're exploring.
 
 # Responsible Use: Interpretability Safety
 
@@ -125,51 +145,104 @@ clone generates its own data via `striat demo`. Cached intermediates in
 
 ---
 
-# Bring Your Own Model
+# Process Any Model
 
 striatica works with any SAE dictionary available through
 [SAELens](https://github.com/jbloom/SAELens). The demo uses GPT-2 Small Layer 6,
-but you can point it at anything SAELens supports.
+but you can process anything SAELens supports — and the CLI auto-discovers what's
+available.
+
+All commands below work identically with Docker or Poetry. Docker examples shown
+first; Poetry equivalents follow.
+
+### Discover available models
+
+The `discover` command pulls the live SAELens pretrained registry and shows every
+model with Neuronpedia feature data available for processing:
+
+```bash
+# Docker
+docker run --name striatica-discover --rm striatica-pipeline \
+  discover --sae-types res
+docker run --name striatica-discover --rm striatica-pipeline \
+  discover --families gpt2,gemma2,llama
+
+# Poetry
+poetry run striat discover --sae-types res
+poetry run striat discover --families gpt2,gemma2,llama
+```
+
+This queries SAELens programmatically — no hardcoded model lists. When SAELens
+adds new models, `discover` picks them up automatically.
+
+### Process a model
+
+The recommended way to process a model is by Neuronpedia ID. The CLI
+auto-resolves the SAELens release name, hook point, and S3 batch count:
+
+```bash
+# Docker
+docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+  model --np-id gpt2-small/6-res-jb
+
+docker run --name striatica-gemma --gpus all \
+  -v $(pwd)/output:/app/output striatica-pipeline-gpu \
+  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
+
+# Poetry
+poetry run striat model --np-id gpt2-small/6-res-jb
+poetry run striat model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
+poetry run striat model --np-id llama3.1-8b/15-llamascope-res-32k --device cuda
+```
+
+The `--np-id` flag checks the SAELens registry before downloading anything. If
+the model doesn't exist, it fails fast with an error and suggests running
+`discover`.
+
+You can also pass explicit SAELens parameters if you need full control:
 
 ```bash
 poetry run striat model \
-  --model gemma-2b \
-  --layer 12-res-jb \
-  --sae-release gemma-2b-res-jb \
-  --sae-hook blocks.12.hook_resid_pre \
-  --num-batches 48 \
-  --features-per-batch 1024 \
+  --model gpt2-small \
+  --layer 6-res-jb \
+  --sae-release gpt2-small-res-jb \
+  --sae-hook blocks.6.hook_resid_pre \
   --device auto
 ```
 
-This runs the same pipeline (download → reduce → cluster → local dim → JSON) but
-with your model's parameters. Output lands in
-`frontend/public/data/<model>-<layer>.json`.
+### Batch processing
 
-### Quick test with a small model
-
-To verify the BYO pipeline works without downloading ~2GB of GPT-2 weights, run
-the included test script. It uses Pythia-70M (~150MB), the smallest model
-SAELens supports:
+Process multiple models sequentially with resume capability:
 
 ```bash
-bash scripts/test_byo_model.sh
-```
+# Docker
+docker run --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+  batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb,gpt2-small/10-res-jb" \
+  --continue-on-error
 
-This calls `striat model` with pre-filled Pythia-70M flags (4 batches × 1024
-features = 4,096 features). Takes about a minute on a recent laptop.
+# Poetry
+poetry run striat batch \
+  --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb,gpt2-small/10-res-jb" \
+  --continue-on-error
+
+# Force reprocess even if output exists
+docker run --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+  batch --np-ids "..." --force
+```
 
 ### Hardware guidance
 
 | Model              | Features | RAM   | Time (approx) | GPU                  |
 | ------------------ | -------- | ----- | ------------- | -------------------- |
-| GPT-2 Small (demo) | 24,576   | 24GB  | 5–10 min      | not needed           |
-| Gemma 2B           | ~49K     | 32GB  | 15–30 min     | recommended          |
-| Llama 3 8B         | ~130K    | 64GB+ | 1–2 hr        | strongly recommended |
+| GPT-2 Small (demo) | 24,576   | 16GB  | 5–10 min      | not needed           |
+| Gemma 2B (16K)     | 16,384   | 16GB  | 10–20 min     | recommended          |
+| Gemma 2B (65K)     | 65,536   | 32GB  | 30–60 min     | recommended          |
+| Llama 3.1 8B (32K) | 32,768   | 32GB  | 30–60 min     | strongly recommended |
+| Llama 3.1 8B (131K)| 131,072  | 64GB+ | 1–2 hr        | strongly recommended |
+| Gemma 2 9B+        | 131,072+ | 64GB+ | 2–6 hr        | required             |
 
 VGT growth curve computation is the bottleneck — it's O(n²) on the feature
-count. Large dictionaries benefit significantly from GPU-accelerated distance
-computation.
+count. Large dictionaries benefit significantly from GPU acceleration.
 
 ### After generating
 
@@ -178,72 +251,135 @@ pass the dataset filename as a query parameter:
 
 ```bash
 cd frontend && pnpm install && pnpm dev
-# Then open: http://localhost:5173/?dataset=gemma-2b-12-res-jb.json
+# Then open: http://localhost:5173/?dataset=gemma-2-2b-12-gemmascope-res-16k.json
 ```
 
-Without the `?dataset=` parameter, the frontend loads the GPT-2 Small demo
-dataset by default. The `striat model` command prints the exact URL to open when
-it finishes.
+The `striat model` command prints the exact URL to open when it finishes.
 
-### Required flags
+### CLI reference
 
-| Flag            | Description                           | Example                   |
-| --------------- | ------------------------------------- | ------------------------- |
-| `--model`       | Model ID matching SAELens/Neuronpedia | `gpt2-small`, `gemma-2b`  |
-| `--layer`       | Layer identifier                      | `6-res-jb`, `12-res-jb`   |
-| `--sae-release` | SAELens release name                  | `gpt2-small-res-jb`       |
-| `--sae-hook`    | TransformerLens hook point            | `blocks.6.hook_resid_pre` |
+| Flag                   | Description                                          | Default |
+| ---------------------- | ---------------------------------------------------- | ------- |
+| `--np-id`              | Neuronpedia ID (auto-resolves everything)            | —       |
+| `--model`              | Model ID (explicit mode)                             | —       |
+| `--layer`              | Layer identifier (explicit mode)                     | —       |
+| `--sae-release`        | SAELens release name (explicit mode)                 | —       |
+| `--sae-hook`           | SAELens hook point (explicit mode)                   | —       |
+| `--num-batches`        | S3 batch count (auto-probed with `--np-id`)          | 24      |
+| `--features-per-batch` | Features per S3 batch                                | 1024    |
+| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu`           | `auto`  |
+| `--json-export`        | Export JSON only, skip frontend launch instructions  | off     |
+| `--include-semantics`  | Include semantic labels for non-public-tier models   | off     |
 
-| Optional               | Description                                | Default |
-| ---------------------- | ------------------------------------------ | ------- |
-| `--num-batches`        | Neuronpedia S3 batch count                 | 24      |
-| `--features-per-batch` | Features per S3 batch                      | 1024    |
-| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu` | `auto`  |
-| `--json-export`        | Export JSON only, no frontend instructions | off     |
+---
 
-To find the right values for your model, check the
-[SAELens model list](https://github.com/jbloom/SAELens) and
-[Neuronpedia](https://neuronpedia.org).
+# Docker
 
-### Hook point formats
+Run the full pipeline in a container — no local Python setup required.
 
-SAELens supports multiple hook point formats depending on the model and release:
+### CPU
 
-**TransformerLens hook points** (most common):
+```bash
+docker build -t striatica-pipeline .
 
-- `blocks.{N}.hook_resid_pre` — before residual stream at layer N
-- `blocks.{N}.hook_resid_post` — after residual stream at layer N
+# Process GPT-2 Small
+docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+  model --np-id gpt2-small/6-res-jb
 
-**Newer canonical releases** (SAELens standardized format):
+# Discover available models
+docker run --name striatica-discover --rm striatica-pipeline \
+  discover --sae-types res
 
-- `layer_{N}/width_{K}k/canonical` — e.g., `layer_6/width_16k/canonical`
+# Batch process
+docker run --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+  batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb" --continue-on-error
+```
 
-Check the SAELens documentation or Neuronpedia for your model's available hook
-points. The `--sae-hook` flag accepts any string — it's passed directly to
-`SAE.from_pretrained()`.
+### GPU (NVIDIA)
+
+```bash
+docker build -f Dockerfile.gpu -t striatica-pipeline-gpu .
+
+docker run --name striatica-gpu --gpus all \
+  -v $(pwd)/output:/app/output striatica-pipeline-gpu \
+  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
+```
+
+### Semantic labels
+
+Semantic labels (feature explanations) are redacted by default for models
+outside the public tier. Add `--include-semantics` to include them:
+
+```bash
+docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+  model --np-id gemma-2-2b/12-gemmascope-res-16k --include-semantics
+```
+
+Please read the [Responsible Use](#responsible-use-interpretability-safety) section before publishing
+semantic data for capable models.
+
+### Notes
+
+The Docker image uses `python:3.12-slim` which supports `amd64` and `arm64`
+natively. Intel, AMD, and Apple Silicon all work out of the box. If you're on
+something else, building from the Dockerfile should handle it.
+
+**Laptop users:** The pipeline uses all available CPU cores by default (minus
+one for the OS). On a laptop this can push thermals hard, especially during VGT
+computation. If you're on a MacBook or similar thin-and-light, consider using
+Docker Desktop's resource limits (Settings → Resources) to cap CPU cores, or use
+a cloud instance for anything beyond GPT-2 Small. The pipeline is designed for
+beefy server CPUs — it will happily saturate whatever you give it.
+
+---
+
+# Cloud Preprocessing
+
+Scripts are included for running the pipeline on cloud GPU instances. Use
+`--plan` to see instance size recommendations before spending money.
+
+```bash
+# See recommendations (dry run, no cost)
+./scripts/cloud_preprocess.sh --plan --gpu --np-id gemma-2-9b/20-gemmascope-res-16k
+```
+
+### Lambda AI (recommended for GPU)
+
+```bash
+# On a Lambda GPU instance:
+./scripts/lambda_quickstart.sh --np-id gemma-2-2b/12-gemmascope-res-16k
+
+# Or batch multiple models:
+./scripts/lambda_quickstart.sh --np-ids "gpt2-small/6-res-jb,gemma-2-2b/12-gemmascope-res-16k"
+```
+
+A single A100 processes GPT-2 Small in ~2 minutes and Gemma 2B in ~20 minutes.
+
+### Azure
+
+```bash
+# Provisions a VM, runs the pipeline, downloads results
+./scripts/azure_quickstart.sh --gpu --np-id gemma-2-2b/12-gemmascope-res-16k
+
+# IMPORTANT: tear down when done to stop charges
+./scripts/azure_quickstart.sh --teardown
+```
 
 ### Remote compute, local visualization
 
-To run the pipeline on a remote server (e.g., a GPU instance) and view results
-on your local machine:
+To run on any remote server and view results locally:
 
 ```bash
-# On remote server
-poetry run striat model \
-  --model gemma-2b \
-  --layer 12-res-jb \
-  --sae-release gemma-2b-res-jb \
-  --sae-hook blocks.12.hook_resid_pre \
-  --device cuda \
-  --json-export
+# On remote server (Docker or Poetry — either works)
+docker run --name striatica-remote -v $(pwd)/output:/app/output striatica-pipeline \
+  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
 
-# Copy the output JSON to your local machine
-scp remote:path/to/striatica/frontend/public/data/gemma-2b-12-res-jb.json \
-  ./frontend/public/data/
+# Copy output to your local machine
+scp remote:~/output/*.json ./frontend/public/data/
 
-# On local machine — launch frontend and open the dataset
+# On local machine
 cd frontend && pnpm dev
-# Open: http://localhost:5173/?dataset=gemma-2b-12-res-jb.json
+# Open: http://localhost:5173/?dataset=gemma-2-2b-12-gemmascope-res-16k.json
 ```
 
 ---
