@@ -273,52 +273,30 @@ The `striat model` command prints the exact URL to open when it finishes.
 
 ---
 
-# Docker
+# Docker Reference
 
-Run the full pipeline in a container — no local Python setup required.
-
-### CPU
-
-```bash
-docker build -t striatica-pipeline .
-
-# Process GPT-2 Small
-docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
-  model --np-id gpt2-small/6-res-jb
-
-# Discover available models
-docker run --name striatica-discover --rm striatica-pipeline \
-  discover --sae-types res
-
-# Batch process
-docker run --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
-  batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb" --continue-on-error
-```
-
-### GPU (NVIDIA)
+Two Dockerfiles are provided: `Dockerfile` (CPU) and `Dockerfile.gpu` (NVIDIA
+GPU). Build whichever you need:
 
 ```bash
-docker build -f Dockerfile.gpu -t striatica-pipeline-gpu .
-
-docker run --name striatica-gpu --gpus all \
-  -v $(pwd)/output:/app/output striatica-pipeline-gpu \
-  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
+docker build -t striatica-pipeline .                              # CPU
+docker build -f Dockerfile.gpu -t striatica-pipeline-gpu .        # GPU
 ```
+
+All CLI subcommands (`model`, `discover`, `batch`) work in either container.
+Mount a volume to `-v $(pwd)/output:/app/output` to get results out. Use
+`--name` to keep `docker ps` clean.
 
 ### Semantic labels
 
 Semantic labels (feature explanations) are redacted by default for models
-outside the public tier. Add `--include-semantics` to include them:
-
-```bash
-docker run --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
-  model --np-id gemma-2-2b/12-gemmascope-res-16k --include-semantics
-```
+outside the public tier. Add `--include-semantics` to any `model` or `batch`
+command to include them. This works the same in Docker and Poetry.
 
 Please read the [Responsible Use](#responsible-use-interpretability-safety) section before publishing
 semantic data for capable models.
 
-### Notes
+### Platform and performance notes
 
 The Docker image uses `python:3.12-slim` which supports `amd64` and `arm64`
 natively. Intel, AMD, and Apple Silicon all work out of the box. If you're on
