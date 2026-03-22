@@ -27,6 +27,10 @@ COPY pyproject.toml poetry.lock* ./
 
 # Install dependencies only (--no-root skips installing the project itself,
 # which would fail because the source code isn't copied yet)
+# CRITICAL: Do NOT run `poetry lock` here. The lockfile pins exact versions
+# that produce reproducible UMAP embeddings. Re-locking can pull newer patch
+# versions of umap-learn/numpy/scipy/numba/pynndescent, which changes the
+# 3D positions even with the same random_state=42.
 RUN poetry config virtualenvs.create false && \
     poetry install --extras ml --without dev --no-interaction --no-root
 

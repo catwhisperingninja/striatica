@@ -1,45 +1,74 @@
-# striatica pipeline — GPU variant for Lambda AI / cloud GPU
+# striatica pipeline — GPU variant for Vast.ai / cloud GPU instances
+# CUDA 12.4 + Python 3.12 + PyTorch with CUDA support
 #
-# Usage:
-#   docker build -f Dockerfile.gpu -t striatica-pipeline-gpu .
-#   docker run --gpus all -v $(pwd)/output:/app/output striatica-pipeline-gpu \
-#     model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
-#   docker run --gpus all -v $(pwd)/output:/app/output striatica-pipeline-gpu \
-#     batch --np-ids '...' --device cuda
+# Build (on your Mac — ARM builds are fine, Vast pulls the right arch):
+#   docker build -f Dockerfile.gpu -t ghcr.io/catwhisperingninja/striatica-pipeline:gpu .
+#
+# Push to GitHub Container Registry:
+#   echo $GITHUB_TOKEN | docker login ghcr.io -u catwhisperingninja --password-stdin
+#   docker push ghcr.io/catwhisperingninja/striatica-pipeline:gpu
+#
+# Run on Vast.ai:
+#   docker pull ghcr.io/catwhisperingninja/striatica-pipeline:gpu
+#   docker run --gpus all -v /root/output:/app/output -it \
+#     ghcr.io/catwhisperingninja/striatica-pipeline:gpu bash
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
-# Python 3.12
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python 3.12 from deadsnakes PPA (not in base Ubuntu 22.04)
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && \
     apt-get install -y --no-install-recommends \
         python3.12 \
         python3.12-venv \
-        python3-pip \
+        python3.12-dev \
         build-essential \
         git \
+        curl \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
 
+# pip for Python 3.12 (apt python3-pip installs for system python, not 3.12)
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python
+
 # Install Poetry
-RUN pip install --no-cache-dir --break-system-packages poetry
+RUN pip install --no-cache-dir poetry
 
 WORKDIR /app
 
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies only (--no-root: source not copied yet)
+# CRITICAL: Install PyTorch with CUDA *before* Poetry resolves deps.
+# Poetry would pull CPU torch. We pre-install GPU torch so Poetry finds
+# it already satisfied and skips the CPU version.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu124
+
+# CRITICAL: Do NOT run `poetry lock` here. The lockfile pins exact versions
+# that produce reproducible UMAP embeddings. Re-locking pulls newer versions
+# which silently changes 3D feature positions even with the same random seed.
 RUN poetry config virtualenvs.create false && \
     poetry install --extras ml --without dev --no-interaction --no-root
 
+# Copy source
 COPY pipeline/ pipeline/
 COPY scripts/ scripts/
+COPY tests/ tests/
 
-# Now install the project itself (the striat entry point)
+# Install the project itself (striat entrypoint)
 RUN poetry install --extras ml --without dev --no-interaction
 
 RUN mkdir -p /app/output /app/data
 ENV STRIATICA_OUTPUT_DIR=/app/output
 ENV STRIATICA_DATA_DIR=/app/data
+
+# Smoke test at build time
+RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA compiled: {torch.backends.cuda.is_built()}')" || true
+RUN python -c "from pipeline.vectors import load_transcoder_vectors; print('transcoder loader OK')"
 
 ENTRYPOINT ["python", "-m", "pipeline.cli"]
 CMD ["--help"]

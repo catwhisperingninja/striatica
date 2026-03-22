@@ -96,6 +96,13 @@ add a new config section instead. This rule exists because hardcoded values were
 the root cause of the DOF bug, the brightness overwhelm bug, and several other
 issues that were painful to track down.
 
+### No Hardcoded Test Assumptions
+
+Specific properties are to be used to perform tests ("feature index needs to be
+LOCAL index") rather than generalities ("not all features in same circuit",
+"circuit does not include >60% of features") that may or may not ever have a
+true edge case.
+
 ### Debug Console
 
 The debug console (`DebugConsole.tsx`, toggle with backtick) must stay wired to
@@ -119,11 +126,38 @@ file under `frontend/public/data/`) without explicit user approval. Fix the
 code, show the diff, and wait. The user decides when to regenerate data because
 they can visually verify the output — you cannot.
 
+### Never Run `poetry lock` in Dockerfiles or CI
+
+The `poetry.lock` file pins the exact library versions that produced the current
+data files. UMAP output is **not reproducible across different library
+versions**, even with the same `random_state`. A single patch-level bump to
+umap-learn, numpy, scipy, numba, or pynndescent will silently produce
+completely different 3D feature positions.
+
+**Rules:**
+
+- Dockerfiles MUST use `poetry install` with the committed lockfile. Never
+  `poetry lock` or `poetry lock --no-update` inside a container build.
+- CI/CD scripts MUST NOT regenerate the lockfile.
+- The lockfile is updated **only** on the developer's machine, deliberately,
+  when a dependency change is needed. After updating, ALL data must be
+  regenerated and visually verified before committing.
+- If `poetry install` fails because pyproject.toml has deps not in the
+  lockfile, the fix is to update the lockfile locally and commit it — not to
+  auto-lock in the build.
+
+**Root cause (2026-03-21):** `poetry lock` was added to both Dockerfiles to
+handle a pyproject.toml update. The container resolved newer dependency
+versions from PyPI, which changed the UMAP projection. Feature positions in the
+Docker-generated dataset were completely different from the original Feb 27
+data, despite identical code and `random_state=42`.
+
 ### Tests Are Necessary But Not Sufficient
 
 Passing a numerical test assertion (e.g., "overlap < 20%") does not mean the
 visualization is correct. For any change that affects what the user sees
 (rendering, data pipeline, circuit generation), the verification loop is:
+
 1. Fix code
 2. Show diff to user for review
 3. User regenerates data
@@ -136,16 +170,16 @@ Do not treat green tests as the finish line for visual/rendering changes.
 
 The co-activation circuit extraction in `pipeline/circuits.py` uses Jaccard
 similarity over token positions to infer feature relationships. This is a
-**correlational heuristic**, not a causal attribution method. It has been present
-unchanged since the code was first written (GitLab era, confirmed via MD5 hash
-comparison between first commit `5b73c7d` and current HEAD).
+**correlational heuristic**, not a causal attribution method. It has been
+present unchanged since the code was first written (GitLab era, confirmed via
+MD5 hash comparison between first commit `5b73c7d` and current HEAD).
 
 **The contamination problem:** Broadly-activating features (high `frac_nonzero`)
 co-occur with nearly everything, so Jaccard gives them high similarity to every
 other feature in every circuit. 10 specific features (#316, #979, #2039, #7496,
 #9088, #10423, #16196, #23111, #23123, #23373) saturated all 5 co-activation
-circuits. These are NOT computationally related to all those circuits — they just
-fire on common tokens.
+circuits. These are NOT computationally related to all those circuits — they
+just fire on common tokens.
 
 **What is NOT affected:** The geometric pipeline (`process_gpt2_small.py`: PCA,
 UMAP, HDBSCAN, VGT on raw SAE decoder vectors) does not use circuit code. The
@@ -157,16 +191,18 @@ contaminated features have VGT ≈ 0.14. The geometric convergence is real and n
 explained by activation frequency (Pearson correlation between frac_nonzero and
 VGT = 0.03).
 
-**What IS affected:** Any claim about multi-circuit membership ("in 6 circuits"),
-circuit role assignments (source/processing/sink by breadth), and edge
-directionality. These are heuristic labels from the Jaccard pipeline, not
+**What IS affected:** Any claim about multi-circuit membership ("in 6
+circuits"), circuit role assignments (source/processing/sink by breadth), and
+edge directionality. These are heuristic labels from the Jaccard pipeline, not
 computationally meaningful in the Olah/mechanistic interpretability sense.
 Features with selective activation (appearing in 1–3 circuits) may be valid
 signal; features saturating all circuits are contamination artifacts.
 
 **Five ungrounded assumptions in `extract_coactivation_circuit`:**
+
 1. Top-k by peak activation = importance (no citation)
-2. Jaccard over token positions = computational relationship (correlational, not causal)
+2. Jaccard over token positions = computational relationship (correlational, not
+   causal)
 3. Activation breadth = role (no published basis; Olah uses layer position)
 4. Edge direction by breadth (no basis in circuits literature)
 5. Arbitrary thresholds: min_coactivation=0.1, top_k=30 (not data-derived)
@@ -177,13 +213,19 @@ population) are clean. Circuit-specific claims (multi-circuit convergence,
 role-based analysis) and all Circuits View screenshots need revision. The paper
 was framed as a tool paper with observational findings, which is the correct
 framing. Integration with causal circuit methods (Neuronpedia Circuit Tracer) is
-planned — see `img/NEURONPEDIA_CIRCUIT_TRACER_INTEGRATION.md`.
+prioritized and in-progress.
 
 **File lineage:**
-- `pipeline/circuits.py`: unchanged since first commit. MD5 `2cdc146de262b215355f4845a2dc167e`.
-- `frontend/public/data/gpt2-small-6-res-jb.json`: produced Feb 27, never touched by circuit code.
-- `frontend/public/data/circuits/*.json`: regenerated by bad commit `3ef0c2a` (March 21). Current on-disk versions are post-decontamination from that commit, NOT the originals the paper screenshots were taken from.
-- `data/*.jsonl`: raw Neuronpedia downloads, gitignored, never modified by any pipeline code.
+
+- `pipeline/circuits.py`: unchanged since first commit. MD5
+  `2cdc146de262b215355f4845a2dc167e`.
+- `frontend/public/data/gpt2-small-6-res-jb.json`: produced Feb 27, never
+  touched by circuit code.
+- `frontend/public/data/circuits/*.json`: regenerated by bad commit `3ef0c2a`
+  (March 21). Current on-disk versions are post-decontamination from that
+  commit, NOT the originals the paper screenshots were taken from.
+- `data/*.jsonl`: raw Neuronpedia downloads, gitignored, never modified by any
+  pipeline code.
 
 ### Circuit Data — Two Separate File Paths
 
@@ -199,9 +241,9 @@ This has caused confusion. Be explicit about which data you mean:
    `extract_similarity_circuit`. **These are the only files the circuit code
    writes.**
 
-The UI composites both at runtime. A screenshot showing "Feature #23373,
-Cluster 30, dim=0.1, in 6 circuits" displays data from BOTH files — geometry
-from file 1 (clean), circuit membership from file 2 (contaminated).
+The UI composites both at runtime. A screenshot showing "Feature #23373, Cluster
+30, dim=0.1, in 6 circuits" displays data from BOTH files — geometry from file 1
+(clean), circuit membership from file 2 (contaminated).
 
 ## Known Bug Patterns
 
@@ -264,7 +306,7 @@ config — no magic numbers anywhere in the rendering code.
   `UNCATEGORIZED.colorDimFactor`
 
 **Circuit view rendering** (`CircuitBackground.tsx`, `CircuitNodes.tsx`,
-`CircuitEdges.tsx`):
+`CircuitEdges.tsx`): **_FIX PENDING CIRCUIT TRANSCODER MAPPING COMPLETION_**
 
 - Background shows ALL 24,576 points at very low opacity for spatial context
 - CircuitNodes renders circuit members as bright points with role-based colors
@@ -393,4 +435,4 @@ in the type but has no corresponding view component yet.
 
 ## Remote
 
-GitHub: `github.com/catwhisperingninja/striatica` (private)
+GitHub: `github.com/catwhisperingninja/striatica`

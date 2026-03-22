@@ -80,10 +80,23 @@ def test_rejects_nan_weights(mock_load_file, mock_hf_download):
 
 @patch("pipeline.vectors.hf_hub_download")
 def test_fallback_on_missing_l0(mock_hf_download):
-    """Raise ValueError if the L0 variant does not exist on HuggingFace."""
+    """Raise ValueError if the L0 variant does not exist on HuggingFace.
+
+    EntryNotFoundError's constructor signature varies across huggingface_hub
+    versions (some need a Response object, some accept a plain string).
+    We create the error in a version-agnostic way to avoid test fragility.
+    """
     from huggingface_hub.utils import EntryNotFoundError
 
-    mock_hf_download.side_effect = EntryNotFoundError("File not found")
+    # Version-agnostic instantiation: try simple string first, fall back
+    # to __new__ (bypasses __init__) if the constructor requires more args.
+    try:
+        err = EntryNotFoundError("File not found")
+    except TypeError:
+        err = EntryNotFoundError.__new__(EntryNotFoundError)
+        err.args = ("File not found",)
+
+    mock_hf_download.side_effect = err
 
     with pytest.raises(ValueError, match="L0 variant 999 not found"):
         load_transcoder_vectors(layer=12, l0_variant=999)
