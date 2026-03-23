@@ -210,6 +210,42 @@ poetry run striat model \
   --device auto
 ```
 
+### Process a transcoder (Gemmascope)
+
+striatica also supports Gemmascope transcoders from Google's
+[gemma-scope](https://huggingface.co/google/gemma-scope-2b-pt-transcoders)
+collection. Transcoders map between transformer layers and produce decoder
+vectors that live in a higher-dimensional space (2304D for Gemma 2 2B vs 768D
+for GPT-2 Small). The geometric pipeline processes them identically.
+
+```bash
+# Poetry
+poetry run striat model --transcoder gemma-2-2b/12/604 --device auto
+
+# Docker
+docker run -t --name striatica-gemma --gpus all \
+  -v $(pwd)/output:/app/output striatica-pipeline-gpu \
+  model --transcoder gemma-2-2b/12/604 --device cuda
+
+# On a Vast.ai / cloud GPU instance (pip install, no Poetry)
+python -m pipeline model --transcoder gemma-2-2b/12/604 --device auto --json-export
+```
+
+The `--transcoder` flag takes a `model/layer/l0` spec. The L0 value selects the
+sparsity variant — lower L0 means sparser activations. Available variants for
+Gemma 2 2B layer 12 width_16k: 6, 10, 18, 32, 60, 111, 204, 359, 604, 955.
+
+Transcoder weights are downloaded from HuggingFace (public, CC-BY-4.0, no auth
+required). Feature explanations from Neuronpedia are not yet available for
+transcoders, so the output JSON contains geometry only — positions, clusters,
+local dimensions, and VGT growth curves.
+
+| Flag                | Description                           | Default                                      |
+| ------------------- | ------------------------------------- | -------------------------------------------- |
+| `--transcoder`      | Transcoder spec: `model/layer/l0`     | —                                            |
+| `--transcoder-repo` | HuggingFace repo ID                   | `google/gemma-scope-2b-pt-transcoders`       |
+| `--transcoder-width`| Width variant                         | `width_16k`                                  |
+
 ### Batch processing
 
 Process multiple models sequentially with resume capability:
@@ -258,18 +294,21 @@ The `striat model` command prints the exact URL to open when it finishes.
 
 ### CLI reference
 
-| Flag                   | Description                                          | Default |
-| ---------------------- | ---------------------------------------------------- | ------- |
-| `--np-id`              | Neuronpedia ID (auto-resolves everything)            | —       |
-| `--model`              | Model ID (explicit mode)                             | —       |
-| `--layer`              | Layer identifier (explicit mode)                     | —       |
-| `--sae-release`        | SAELens release name (explicit mode)                 | —       |
-| `--sae-hook`           | SAELens hook point (explicit mode)                   | —       |
-| `--num-batches`        | S3 batch count (auto-probed with `--np-id`)          | 24      |
-| `--features-per-batch` | Features per S3 batch                                | 1024    |
-| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu`           | `auto`  |
-| `--json-export`        | Export JSON only, skip frontend launch instructions  | off     |
-| `--include-semantics`  | Include semantic labels for non-public-tier models   | off     |
+| Flag                   | Description                                          | Default                                |
+| ---------------------- | ---------------------------------------------------- | -------------------------------------- |
+| `--np-id`              | Neuronpedia ID (auto-resolves everything)            | —                                      |
+| `--model`              | Model ID (explicit mode)                             | —                                      |
+| `--layer`              | Layer identifier (explicit mode)                     | —                                      |
+| `--sae-release`        | SAELens release name (explicit mode)                 | —                                      |
+| `--sae-hook`           | SAELens hook point (explicit mode)                   | —                                      |
+| `--transcoder`         | Transcoder spec: `model/layer/l0`                    | —                                      |
+| `--transcoder-repo`    | HuggingFace repo for transcoder weights              | `google/gemma-scope-2b-pt-transcoders` |
+| `--transcoder-width`   | Width variant directory                              | `width_16k`                            |
+| `--num-batches`        | S3 batch count (auto-probed with `--np-id`)          | 24                                     |
+| `--features-per-batch` | Features per S3 batch                                | 1024                                   |
+| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu`           | `auto`                                 |
+| `--json-export`        | Export JSON only, skip frontend launch instructions  | off                                    |
+| `--include-semantics`  | Include semantic labels for non-public-tier models   | off                                    |
 
 ---
 
@@ -516,6 +555,11 @@ frontend/
 
 Planned features, roughly in priority order:
 
+- **Docker x86 reproducibility** — force `--platform linux/amd64` in Dockerfiles
+  so UMAP output is identical regardless of host architecture (ARM vs x86). Commit
+  generated data to git as a build artifact rather than regenerating per clone.
+- **Gemma 2 transcoder integration** — causal circuit data via Neuronpedia Circuit
+  Tracer, replacing the Jaccard co-activation heuristic
 - **Multi-dataset switching** — load multiple model JSONs and switch between
   them in the UI
 - **Local Dimension view** — third view mode visualizing per-feature intrinsic

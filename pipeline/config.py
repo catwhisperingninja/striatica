@@ -18,6 +18,22 @@ class SAEConfig:
     num_batches: int    # S3 batch file count
     features_per_batch: int
 
+
+@dataclass(frozen=True)
+class TranscoderConfig:
+    model_id: str           # e.g. "gemma-2-2b"
+    layer: int              # transformer layer index (e.g. 12)
+    l0_variant: int         # average L0 sparsity variant (e.g. 604)
+    repo_id: str = "google/gemma-scope-2b-pt-transcoders"
+    width: str = "width_16k"
+    # No num_batches/features_per_batch — transcoder weight shape determines feature count
+    # No sae_release/sae_hook — vectors come from HuggingFace npz, not SAELens
+
+
+# Union type for pipeline dispatch
+PipelineConfig = SAEConfig | TranscoderConfig
+
+
 GPT2_SMALL_L6 = SAEConfig(
     model_id="gpt2-small",
     layer="6-res-jb",
@@ -25,6 +41,12 @@ GPT2_SMALL_L6 = SAEConfig(
     sae_hook="blocks.6.hook_resid_pre",
     num_batches=24,
     features_per_batch=1024,
+)
+
+GEMMA2_2B_L12 = TranscoderConfig(
+    model_id="gemma-2-2b",
+    layer=12,
+    l0_variant=604,
 )
 
 

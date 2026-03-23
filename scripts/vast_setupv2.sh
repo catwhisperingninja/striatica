@@ -33,6 +33,27 @@ echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || ec
 echo ""
 
 # ---------------------------------------------------------------
+# 0. NUKE CONDA — it hijacks PATH on every shell init
+# ---------------------------------------------------------------
+# Vast.ai base images ship with conda that injects /opt/conda/bin
+# into PATH via .bashrc/conda init. `conda deactivate` doesn't even
+# exist on older conda versions. Just rename the binaries so even if
+# conda re-injects its path, there's nothing there to shadow us.
+echo "[0] Nuking conda python binaries..."
+for bin in python python3 pip pip3; do
+    if [ -f "/opt/conda/bin/${bin}" ]; then
+        mv "/opt/conda/bin/${bin}" "/opt/conda/bin/${bin}.disabled"
+        echo "  disabled /opt/conda/bin/${bin}"
+    fi
+done
+
+# Strip conda from PATH as well
+export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v conda | tr '\n' ':' | sed 's/:$//')
+hash -r
+
+echo "  python3 resolves to: $(which python3 2>/dev/null || echo 'not found yet — installing next')"
+
+# ---------------------------------------------------------------
 # 1. Python 3.12 via deadsnakes (Vast base image ships 3.10)
 # ---------------------------------------------------------------
 echo "[1/6] Installing Python 3.12..."
@@ -40,15 +61,21 @@ apt-get update -qq && apt-get install -y -qq software-properties-common
 add-apt-repository -y ppa:deadsnakes/ppa
 apt-get install -y -qq python3.12 python3.12-venv python3.12-dev curl git
 curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
-# Override conda's python — put our symlink FIRST in PATH
+
+# Symlinks in /usr/local/bin ONLY — do NOT touch /usr/bin/python3
+# because system tools (add-apt-repository, etc.) have shebangs
+# pointing at /usr/bin/python3 and need the system 3.10 + apt_pkg.
 ln -sf /usr/bin/python3.12 /usr/local/bin/python
-# Also override /usr/bin/python if it exists (conda often puts itself here)
-ln -sf /usr/bin/python3.12 /usr/bin/python
-# Make sure our python3.12 pip is the one that runs
+ln -sf /usr/bin/python3.12 /usr/local/bin/python3
+ln -sf /usr/bin/python3.12 /usr/local/bin/python3.12
 export PATH="/usr/local/bin:$PATH"
-hash -r  # clear bash's command cache
-python --version
-echo "  Python path: $(which python)"
+hash -r
+
+# Verify — python and python3 must say 3.12 via /usr/local/bin
+echo "  python  → $(python --version 2>&1) ($(which python))"
+echo "  python3 → $(python3 --version 2>&1) ($(which python3))"
+echo "  pip     → $(which pip) → Python $(pip --version 2>&1 | grep -oP 'python \K[0-9.]+')"
+echo "  /usr/bin/python3 → $(/usr/bin/python3 --version 2>&1) (system — DO NOT CHANGE)"
 
 # ---------------------------------------------------------------
 # 2. Install deps (pip, no Poetry — Poetry breaks on A100/CUDA)
@@ -63,7 +90,7 @@ echo "[2/6] Installing project deps..."
 python -m pip install --quiet \
     numpy scipy scikit-learn umap-learn hdbscan \
     requests huggingface-hub safetensors python-dotenv \
-    sae-lens transformer-lens transformers \
+    sae-lens transformer-lens "transformers>=4.40,<5" \
     pytest ruff
 
 # ---------------------------------------------------------------
@@ -203,5 +230,8 @@ echo "  cd /root/striatica"
 echo "  python -m pytest tests/ -v              # run tests"
 echo "  cat ${VERSION_LOG}                       # review installed versions"
 echo ""
-echo "Once L0 variant is confirmed, run the geometric pipeline:"
-echo "  python scripts/process_gpt2_small.py --help   # (adapt for Gemma 2 transcoder)"
+echo "Run the Gemma 2 transcoder pipeline:"
+echo "  python -m pipeline.cli model --transcoder gemma-2-2b/12/604 --device auto --json-export"
+echo ""
+echo "Or with a different L0 variant:"
+echo "  python -m pipeline.cli model --transcoder gemma-2-2b/12/955 --device auto --json-export"
