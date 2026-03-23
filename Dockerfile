@@ -1,6 +1,4 @@
 # striatica pipeline — CPU variant
-# GPU variant: change base image to nvidia/cuda:12.x-runtime-ubuntu22.04
-# and install torch with CUDA support
 #
 # Usage:
 #   docker build -t striatica-pipeline .
@@ -17,29 +15,38 @@ RUN apt-get update && \
         git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install --no-cache-dir poetry
-
 WORKDIR /app
 
-# Copy dependency files first for layer caching
-COPY pyproject.toml poetry.lock* ./
+# === UMAP REPRODUCIBILITY CHAIN — exact pins ===
+# These versions produced the Feb 27 2026 dataset positions.
+# Changing ANY of these will produce different 3D embeddings
+# even with the same random_state. Do not widen these ranges.
+RUN pip install --no-cache-dir \
+    "numpy==2.4.2" \
+    "scipy==1.17.1" \
+    "scikit-learn==1.8.0" \
+    "umap-learn==0.5.11" \
+    "hdbscan==0.8.41"
 
-# Install dependencies only (--no-root skips installing the project itself,
-# which would fail because the source code isn't copied yet)
-# CRITICAL: Do NOT run `poetry lock` here. The lockfile pins exact versions
-# that produce reproducible UMAP embeddings. Re-locking can pull newer patch
-# versions of umap-learn/numpy/scipy/numba/pynndescent, which changes the
-# 3D positions even with the same random_state=42.
-RUN poetry config virtualenvs.create false && \
-    poetry install --extras ml --without dev --no-interaction --no-root
+# Other pipeline deps
+RUN pip install --no-cache-dir \
+    "requests>=2.32.5,<3.0.0" \
+    "huggingface-hub>=0.28.0,<1.0.0" \
+    "safetensors>=0.5.0,<1.0.0" \
+    "python-dotenv>=1.1.0,<2.0.0"
 
-# Copy pipeline code
+# ML optional deps (SAELens, TransformerLens, transformers)
+# CPU torch pulled automatically as a dep
+RUN pip install --no-cache-dir \
+    "sae-lens>=6.37.0" \
+    "transformer-lens>=2.12.0" \
+    "transformers>=4.40.0,<5.0.0"
+
+# Copy source and install project (striat entrypoint)
+COPY pyproject.toml ./
 COPY pipeline/ pipeline/
 COPY scripts/ scripts/
-
-# Now install the project itself (the striat entry point)
-RUN poetry install --extras ml --without dev --no-interaction
+RUN pip install --no-cache-dir -e .
 
 # Output directory
 RUN mkdir -p /app/output /app/data
