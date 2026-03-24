@@ -31,6 +31,36 @@ _RAINBOW = [
     171,  # magenta
 ]
 
+# Saturation ramp per hue — desaturated (gray-ish) → fully saturated
+# Each entry is a list of ANSI 256-color codes from dim to vivid
+# Used by the epoch progress bar to sweep saturation then hue
+_RAINBOW_RAMP = [
+    # red:    gray → muted rose → dusky red → bright red
+    [241, 95, 131, 167, 196],
+    # orange: gray → muted peach → dusky orange → bright orange
+    [241, 137, 173, 209, 202],
+    # dark orange
+    [241, 137, 173, 209, 208],
+    # gold
+    [241, 143, 179, 215, 214],
+    # yellow
+    [241, 143, 179, 221, 220],
+    # lime
+    [241, 108, 114, 120, 118],
+    # green
+    [241, 65, 71, 77, 48],
+    # teal
+    [241, 66, 72, 78, 43],
+    # cyan
+    [241, 67, 73, 74, 39],
+    # blue
+    [241, 61, 62, 68, 33],
+    # purple
+    [241, 97, 98, 134, 129],
+    # magenta
+    [241, 133, 134, 170, 171],
+]
+
 # Accent colors for different message types
 _COLORS = {
     "dim":     "\033[38;5;242m",   # dark gray
@@ -156,11 +186,13 @@ class ProgressBar:
         label: str = "",
         width: int = 30,
         emoji: str = "🧬",
+        rainbow_sweep: bool = False,
     ) -> None:
         self.total = total
         self.label = label
         self.width = width
         self.emoji = emoji
+        self.rainbow_sweep = rainbow_sweep
         self.start_time = time.monotonic()
         self._last_line_len = 0
 
@@ -184,12 +216,73 @@ class ProgressBar:
         parts.append(_reset())
         return "".join(parts)
 
+    def _epoch_gradient_bar(self, filled: int, progress: float) -> str:
+        """Build a progress bar with evolving rainbow saturation gradient.
+
+        As overall progress increases:
+        1. First, red desaturates → saturates across the bar cells
+        2. Then orange, yellow, green, etc.
+        3. After all hues are fully saturated, the bar is full rainbow
+
+        Each bar cell picks its color based on:
+        - Which hue "phase" overall progress has reached
+        - How far through saturation that phase is
+        - Earlier cells in the bar are further along than later cells
+
+        The effect: a wave of color sweeps left to right, each hue
+        saturating from dim gray → vivid, then the next hue starts.
+        """
+        if not _USE_COLOR:
+            blocks = ["▒", "▓", "▓", "█"]  # minimum ▒ so filled is always visible
+            parts = []
+            for i in range(self.width):
+                if i < filled:
+                    block_idx = min(int(progress * (len(blocks) - 1)), len(blocks) - 1)
+                    parts.append(blocks[block_idx])
+                else:
+                    parts.append("░")
+            return "".join(parts)
+
+        n_hues = len(_RAINBOW_RAMP)
+        n_sat = len(_RAINBOW_RAMP[0])
+        total_steps = n_hues * n_sat  # total color states across the full run
+        blocks = ["░", "▒", "▓", "█", "█"]  # block chars by saturation level
+
+        parts = []
+        for i in range(self.width):
+            if i >= filled:
+                parts.append(f"{_c('dim')}░")
+                continue
+
+            # Each bar cell gets a slight offset — left cells are "ahead"
+            # This creates a wave effect across the bar width
+            cell_frac = i / max(self.width - 1, 1)
+            # Blend: overall progress drives the sweep, cell position adds wave
+            wave_progress = progress * 0.85 + cell_frac * 0.15
+            wave_progress = min(wave_progress, 1.0)
+
+            # Map to hue + saturation
+            step = wave_progress * (total_steps - 1)
+            hue_idx = min(int(step / n_sat), n_hues - 1)
+            sat_idx = min(int(step % n_sat), n_sat - 1)
+
+            color_code = _RAINBOW_RAMP[hue_idx][sat_idx]
+            block_char = blocks[sat_idx]
+
+            parts.append(f"\033[38;5;{color_code}m{block_char}")
+
+        parts.append(_reset())
+        return "".join(parts)
+
     def update(self, current: int, suffix: str = "") -> None:
         """Redraw the progress bar at `current` out of `self.total`."""
         frac = current / self.total if self.total > 0 else 1.0
         filled = int(self.width * frac)
 
-        bar = self._gradient_bar(filled)
+        if self.rainbow_sweep:
+            bar = self._epoch_gradient_bar(filled, frac)
+        else:
+            bar = self._gradient_bar(filled)
 
         elapsed = time.monotonic() - self.start_time
         if current > 0 and current < self.total:
