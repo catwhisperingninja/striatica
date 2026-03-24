@@ -28,11 +28,18 @@ def _default_n_jobs() -> int:
 
 
 def _pr_single(vectors: np.ndarray, indices: np.ndarray, i: int, k: int) -> float:
-    """Compute participation ratio for a single point (joblib helper)."""
+    """Compute participation ratio for a single point (joblib helper).
+
+    Uses the Gram matrix trick: when k << d (samples << dimensions),
+    X @ X.T (k×k) has the same non-zero eigenvalues as X.T @ X (d×d).
+    For k=30 neighbors in d=2304 dimensions, this is ~450,000x less work.
+    The participation ratio result is identical — same eigenvalues, same formula.
+    """
     nbrs = vectors[indices[i, 1:]]
     nbrs_centered = nbrs - nbrs.mean(axis=0)
-    cov = nbrs_centered.T @ nbrs_centered / (k - 1)
-    eigenvalues = np.linalg.eigvalsh(cov)
+    # Gram matrix (k×k) instead of covariance (d×d) — same non-zero eigenvalues
+    gram = nbrs_centered @ nbrs_centered.T / (k - 1)
+    eigenvalues = np.linalg.eigvalsh(gram)
     eigenvalues = np.maximum(eigenvalues, 0)
     sum_eig = eigenvalues.sum()
     sum_eig_sq = (eigenvalues ** 2).sum()

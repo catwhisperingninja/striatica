@@ -73,6 +73,20 @@ A feasibility study was performed and recommends:
 
 ## Critical Rules
 
+### Semantic Labels Are SECRET — Never Commit to Git
+
+Semantic labels (feature explanations, activation descriptions, interpretability
+annotations) are proprietary and MUST NEVER be committed to git, pushed to any
+remote, included in Docker images, logged to stdout, or written to any file that
+could end up in version control. Treat them like nuclear codes.
+
+The pipeline correctly redacts them for non-public-tier models (`⚠ REDACTING
+semantic labels`). If you see semantic label data in any file staged for commit,
+STOP and remove it. The `.gitignore` should exclude any files containing
+semantic labels. Geometry-only JSON (positions, clusters, VGT, activation stats)
+is fine to commit. Semantic labels are added separately at runtime and never
+persisted to the repository.
+
 ### No Mock Data
 
 All views must use real data from actual datasets (e.g., GPT-2 Small from
