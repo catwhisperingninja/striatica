@@ -1,0 +1,14 @@
+{
+  "model_id": "gemma-2-2b",
+  "layer": "12-gemmascope-res-16k",
+  "pipeline_mode": "sae",
+  "num_features": 16384,
+  "vector_dim": 2304,
+  "processing_time_seconds": 2440,
+  "pipeline_version": "0.3.0",
+  "device": "cuda",
+  "redact_semantics": true,
+  "timestamp": "2026-03-23T21:26:05.842042+00:00",
+  "sae_release": "gemma-scope-2b-pt-res-canonical",
+  "sae_hook": "layer_12/width_16k/canonical"
+}
