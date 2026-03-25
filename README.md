@@ -6,6 +6,13 @@
 
 A geometric atlas for machine intelligence.
 
+> **⚠ Work in Progress (v0.3.0)** — striatica is under active development. The
+> geometric pipeline is functional and producing real data, but circuit
+> integration is being rebuilt with Neuronpedia Circuit Tracer transcoders
+> (replacing the Jaccard co-activation heuristic). Expect rough edges, evolving
+> APIs, and data formats that may change between versions. Contributions and
+> feedback are very welcome.
+
 <img width="3200" height="1200" alt="striatica-banner_v3_sat" src="https://github.com/user-attachments/assets/1ac347c6-67bc-4346-8227-1bc84ac20bbe" />
 
 # Screenshots
@@ -16,11 +23,48 @@ _Example view of a feature, a circuit, and the local dimension heatmap display._
 
 ---
 
+# UMAP Reproducibility — Why Docker Matters
+
+**UMAP output is not reproducible across different library versions**, even with
+the same `random_state=42`. A single patch-level bump to numpy, scipy,
+scikit-learn, umap-learn, or any of their transitive dependencies (numba,
+pynndescent) will silently produce **completely different** 3D feature positions.
+Features will map to the wrong points in space, clusters will change, and
+visualizations will be meaningless.
+
+This is not a striatica bug — it's how UMAP works. The algorithm depends on
+approximate nearest-neighbor graphs, and even minor floating-point differences
+from different library builds cause the graph construction to diverge, which
+cascades through the entire embedding.
+
+**Poetry makes this worse.** Running `poetry lock` resolves the latest
+compatible versions from PyPI, which may include patch updates to the UMAP
+dependency chain. If `poetry lock` runs during a Docker build, in CI, or on a
+different machine than the original developer environment, the resolved versions
+will differ and the output will silently change. **The Dockerfiles bypass Poetry
+entirely and install exact pinned versions via pip** to eliminate this failure
+mode.
+
+**The safe path:** Use Docker. The Dockerfiles pin exact versions of the entire
+UMAP reproducibility chain (`numpy==2.4.2`, `scipy==1.17.1`,
+`scikit-learn==1.8.0`, `umap-learn==0.5.11`, `hdbscan==0.8.41`) and install
+them directly with pip — no lockfile resolution, no version drift.
+
+**If you must use Poetry locally:** Never run `poetry lock` unless you intend to
+regenerate all data. The committed `poetry.lock` pins the versions that produced
+the current data. If `poetry install` fails because `pyproject.toml` has
+dependencies not in the lockfile, the fix is to update the lockfile locally and
+commit it — not to auto-lock in builds. After any lockfile update, all data must
+be regenerated and visually verified.
+
+---
+
 # Quick Start
 
-### Docker (recommended)
+### Docker (strongly recommended)
 
-No Python, no Poetry, no dependency headaches. Just Docker.
+No Python, no Poetry, no dependency headaches. Just Docker. Exact reproducibility
+of UMAP output guaranteed by pinned dependency versions.
 
 ```bash
 git clone https://github.com/catwhisperingninja/striatica.git
@@ -39,6 +83,12 @@ Silicon both work). If you're on something exotic, build from the Dockerfile and
 it should just work.
 
 ### Poetry (for development or if you want the interactive frontend)
+
+> **⚠ Read the [UMAP Reproducibility](#umap-reproducibility--why-docker-matters)
+> section first.** Poetry's dependency resolution can silently change UMAP output.
+> Docker is the only guaranteed-reproducible path. Use Poetry only if you need the
+> interactive frontend or are actively developing the pipeline, and **never run
+> `poetry lock` unless you intend to regenerate all data.**
 
 You need Python 3.12+, [Poetry 2.x](https://python-poetry.org/), and Node.js
 18+.
@@ -117,7 +167,8 @@ has been implemented. Please do not expose it to the public internet as-is.
 | UI           | React 19 + TypeScript + Tailwind CSS 4                                  |
 | State        | Zustand 5                                                               |
 | Pipeline     | Python 3.12 + SAELens + TransformerLens + scikit-learn + UMAP + HDBSCAN |
-| Build        | Vite 7 (frontend), Poetry 2.x (striatica)                               |
+| Validation   | sklearn trustworthiness + neighborhood overlap + silhouette scoring      |
+| Build        | Vite 7 (frontend), Poetry 2.x (striatica), Docker (recommended)         |
 
 # Operation
 
@@ -309,6 +360,13 @@ The `striat model` command prints the exact URL to open when it finishes.
 | `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu`           | `auto`                                 |
 | `--json-export`        | Export JSON only, skip frontend launch instructions  | off                                    |
 | `--include-semantics`  | Include semantic labels for non-public-tier models   | off                                    |
+
+### Validate output
+
+```bash
+striat validate output.json                              # L1 structural checks
+striat validate output.json --compare reference.json     # L1 + L3 comparison
+```
 
 ---
 
@@ -525,13 +583,52 @@ poetry run pytest tests/ -v                  # all fast tests
 poetry run pytest tests/ -v -m "not slow"    # skip model-download tests
 ```
 
+### Validation
+
+The pipeline includes a 3-level validation suite that runs automatically on
+every pipeline execution and can also be run standalone on any output JSON.
+
+```bash
+# Validate an existing output file (Level 1: structural integrity)
+poetry run striat validate frontend/public/data/gpt2-small-6-res-jb.json
+
+# Compare against a reference dataset (Level 3: distributional comparison)
+poetry run striat validate new-output.json --compare reference.json
+```
+
+**Level 1 (structural integrity)** is a hard gate that runs automatically before
+the pipeline writes any JSON. It checks array alignment, position bounds,
+cluster label validity, feature index continuity, and centroid accuracy. If any
+check fails, the pipeline aborts — no corrupt data gets written to disk.
+
+**Level 2 (embedding quality)** runs automatically after Level 1 and produces a
+scorecard. The headline metric is **trustworthiness** (Van der Maaten 2009):
+"are the things that look close in 3D actually close in the original
+high-dimensional space?" A score above 0.92 is good; below 0.85 means the
+embedding is distorting local structure. The scorecard also includes neighborhood
+overlap at multiple k values, silhouette score for cluster quality, PCA
+explained variance, and axis spread checks. These metrics do not depend on UMAP
+coordinate reproducibility — they only measure whether the topology was
+preserved in the specific run.
+
+**Level 3 (cross-model comparison)** is optional (via `--compare` flag) and
+compares distributional signatures between two datasets: cluster count ratio,
+uncategorized fraction, local dimension distributions (KS test), Wasserstein
+distance, silhouette comparison, and cluster size Gini coefficients. Most useful
+for verifying a re-run after a code change, or comparing different layers of the
+same model.
+
+A validation sidecar JSON (`*-validation.json`) is written alongside every output
+file with all metric values, suitable for automated monitoring or Grafana
+ingestion.
+
 ---
 
 # Project Structure
 
 ```
 pipeline/          # Python package — config, download, vectors, reduce, cluster,
-                   #   circuits, local_dim, prepare, cli
+                   #   circuits, local_dim, prepare, validate, cli
 scripts/           # Entry point scripts (process_gpt2_small, generate_circuits)
 tests/             # pytest suite
 data/              # Cached downloads (JSONL from Neuronpedia S3, gitignored)
@@ -555,15 +652,23 @@ frontend/
 
 Planned features, roughly in priority order:
 
+- **Gemma 2 transcoder integration** — causal circuit data via Neuronpedia Circuit
+  Tracer, replacing the Jaccard co-activation heuristic. In progress: Gemma 2 2B
+  geometric data generated, transcoder mapping system under development.
 - **Docker x86 reproducibility** — force `--platform linux/amd64` in Dockerfiles
   so UMAP output is identical regardless of host architecture (ARM vs x86). Commit
   generated data to git as a build artifact rather than regenerating per clone.
-- **Gemma 2 transcoder integration** — causal circuit data via Neuronpedia Circuit
-  Tracer, replacing the Jaccard co-activation heuristic
+- **Pipeline observability** — Grafana dashboards for reproducibility drift
+  monitoring, pipeline performance, data quality, and cost tracking. Dashboard
+  JSONs built, metrics emission module ready, integration in progress.
+- **Multi-model support** — extend transcoder/circuit tracing pipeline to Llama,
+  Qwen, and other model families via Neuronpedia's nnsight backend.
 - **Multi-dataset switching** — load multiple model JSONs and switch between
   them in the UI
 - **Local Dimension view** — third view mode visualizing per-feature intrinsic
-  dimensionality
+  dimensionality (view component built, data pipeline complete)
+- **Distributed processing** — split monolithic pipeline across 2+ GPU containers
+  for large models (65K+ features)
 - **3D export** — export clusters or circuits as glTF/OBJ for use in Blender, 3D
   viewers, or presentations
 - **Annotation system** — save and share named camera positions + selection
@@ -575,11 +680,16 @@ Planned features, roughly in priority order:
 
 # Contributing
 
-striatica is a solo research project and very much a work in progress. If you
-run into bugs, have questions, or want to suggest improvements, please open an
-issue or start a thread in
+striatica is a solo research project and very much a work in progress. The
+geometric pipeline is stable and producing real data across multiple model
+families, but circuit integration is being rebuilt and several features are in
+active development. If you run into bugs, have questions, or want to suggest
+improvements, please open an issue or start a thread in
 [Discussions](https://github.com/catwhisperingninja/striatica/discussions). Pull
 requests are welcome.
 
 If something doesn't work on your system, please include your OS, Python
-version, Node version, and any error output — it helps enormously.
+version, Node version, and any error output — it helps enormously. If you're
+having issues with UMAP reproducibility, see the
+[UMAP Reproducibility](#umap-reproducibility--why-docker-matters) section and
+try Docker first.

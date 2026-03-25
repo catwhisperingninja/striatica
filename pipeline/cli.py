@@ -554,7 +554,7 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     # Step 3: Dimensionality reduction
     t0 = time.time()
     step_header("reduce", "Step 3/6 · PCA + UMAP → 3D")
-    coords = reduce_to_3d(vectors, pca_dim=50)
+    coords, pca_variance = reduce_to_3d(vectors, pca_dim=50, return_pca_variance=True)
     step_done(time.time() - t0)
 
     # Step 4: Clustering
@@ -578,6 +578,35 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     _, growth_curves = estimate_local_dim_vgt(vectors, return_curves=True)
     step_done(time.time() - t0)
 
+    # Step 5.5: Validation
+    from pipeline.validate import (
+        validate_level1_arrays, validate_level2,
+        write_validation_sidecar, ValidationError,
+    )
+
+    t0 = time.time()
+    step_header("validate", "Step 5.5/6 · Validating pipeline output")
+
+    # L1: structural integrity (hard gate)
+    detail("Level 1: structural integrity...")
+    l1_report = validate_level1_arrays(coords, labels, local_dims)
+    if not l1_report.passed:
+        l1_report.print_scorecard()
+        raise ValidationError(l1_report)
+    detail("Level 1: PASS")
+
+    # L2: embedding quality scorecard
+    detail("Level 2: embedding quality (trustworthiness, neighborhood overlap)...")
+    l2_report = validate_level2(
+        vectors, coords, labels,
+        local_dims=local_dims,
+        pca_explained_variance=pca_variance,
+    )
+    l2_report.print_scorecard()
+    if l2_report.has_warnings:
+        detail("⚠  Embedding quality warnings — review scorecard above")
+    step_done(time.time() - t0)
+
     # Step 6: Assemble JSON
     t0 = time.time()
     step_header("assemble", "Step 6/6 · Preparing JSON for frontend")
@@ -589,6 +618,10 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
         redact_semantics=redact_semantics,
     )
     step_done(time.time() - t0)
+
+    # Write validation sidecar
+    val_sidecar = write_validation_sidecar(output, l1_report, l2_report=l2_report)
+    detail(f"📊  Validation: {val_sidecar.name}")
 
     elapsed = time.time() - t_total
     minutes = int(elapsed // 60)
@@ -627,6 +660,48 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     success(f"Complete · {minutes}m {seconds}s")
     detail(f"📁  {output}")
     detail(f"📋  {metadata_path}")
+
+
+# ── Validate ─────────────────────────────────────────────────────────────
+
+def cmd_validate(args: argparse.Namespace) -> None:
+    """Run validation on an existing JSON output file."""
+    import json as _json
+    from pipeline.banner import print_banner, step_header, step_done, detail, success, separator
+    from pipeline.validate import validate_level1_json, validate_level3
+
+    print_banner()
+
+    json_path = Path(args.json_file)
+    if not json_path.exists():
+        print(f"  ✗ File not found: {json_path}")
+        sys.exit(1)
+
+    step_header("validate", f"Validating {json_path.name}")
+    with open(json_path) as f:
+        result = _json.load(f)
+
+    # L1
+    detail("Level 1: structural integrity...")
+    l1 = validate_level1_json(result)
+    l1.print_scorecard()
+
+    if not l1.passed:
+        print("  ✗ Level 1 FAILED — JSON has structural defects")
+        sys.exit(1)
+
+    # L3 (optional)
+    if args.compare:
+        ref_path = Path(args.compare)
+        if not ref_path.exists():
+            print(f"  ✗ Reference file not found: {ref_path}")
+            sys.exit(1)
+        detail(f"Level 3: comparing against {ref_path.name}...")
+        l3 = validate_level3(result, ref_path)
+        l3.print_scorecard()
+
+    separator()
+    success("Validation complete")
 
 
 # ── Circuits ─────────────────────────────────────────────────────────────
@@ -743,6 +818,12 @@ def main() -> None:
     p_batch.add_argument("--force", action="store_true", help="Reprocess models even if output exists")
     p_batch.add_argument("--continue-on-error", action="store_true", help="Continue to next model on failure")
     p_batch.set_defaults(func=cmd_batch)
+
+    # ── validate ──
+    p_validate = sub.add_parser("validate", help="Validate a pipeline output JSON")
+    p_validate.add_argument("json_file", help="Path to output JSON file")
+    p_validate.add_argument("--compare", help="Reference JSON for Level 3 comparison")
+    p_validate.set_defaults(func=cmd_validate)
 
     # ── circuits ──
     p_circuits = sub.add_parser(
