@@ -1,5 +1,5 @@
 # striatica/pipeline/circuits.py
-"""Extract circuit data from GPT-2 Small using co-activation and similarity methods."""
+"""Extract circuit data using co-activation, similarity, and Neuronpedia causal methods."""
 
 from __future__ import annotations
 
@@ -322,4 +322,135 @@ def extract_similarity_circuit(
         "description": f"Similarity circuit from feature #{seed_feature} (depth {depth})",
         "nodes": nodes,
         "edges": edges,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Neuronpedia Circuit Tracer integration (Gemma 2 transcoders)
+# ---------------------------------------------------------------------------
+
+# Max local feature index for width_16k transcoders
+_MAX_LOCAL_INDEX = 16384  # 0 through 16383
+
+
+def extract_local_feature_index(global_index: int, layer: int) -> int:
+    """Convert a Neuronpedia global transcoder feature index to a local index.
+
+    Neuronpedia encodes global indices as: layer * 100000 + local_index.
+    Layer 0 is special: indices are already local (0-16383).
+
+    Args:
+        global_index: The global feature index from node["feature"].
+        layer: The expected layer number.
+
+    Returns:
+        The local feature index within the layer (0 to 16383 for width_16k).
+
+    Raises:
+        ValueError: If global index doesn't match the claimed layer, or if
+            the derived local index is out of range.
+    """
+    if layer == 0:
+        local_index = global_index
+    else:
+        expected_layer = global_index // 100000
+        if expected_layer != layer:
+            raise ValueError(
+                f"Global index {global_index} does not match layer {layer} "
+                f"(derived layer={expected_layer})"
+            )
+        local_index = global_index % 100000
+
+    if local_index < 0 or local_index >= _MAX_LOCAL_INDEX:
+        raise ValueError(
+            f"Local index {local_index} out of range [0, {_MAX_LOCAL_INDEX}) "
+            f"for global index {global_index}, layer {layer}"
+        )
+
+    return local_index
+
+
+def parse_neuronpedia_circuit(
+    data: dict,
+    name: str,
+    description: str,
+    layer_filter: int,
+) -> dict:
+    """Parse a Neuronpedia Circuit Tracer attribution graph into Striatica schema.
+
+    Translates the Neuronpedia JSON format (global feature indices, string layers,
+    list-of-lists supernodes) into our internal circuit representation with local
+    feature indices.
+
+    Args:
+        data: Raw JSON dict from Neuronpedia Circuit Tracer API.
+        name: Name for the resulting circuit.
+        description: Human-readable description.
+        layer_filter: Only include nodes from this layer.
+
+    Returns:
+        Dict matching Striatica CircuitData schema with keys:
+        name, description, type, source, nodes, edges, metadata.
+    """
+    # Build supernode role mapping: node_id -> role label
+    supernode_roles: dict[str, str] = {}
+    supernodes = data.get("qParams", {}).get("supernodes", [])
+    for sn in supernodes:
+        if not sn or len(sn) < 2:
+            continue
+        label = sn[0]  # first element is the label
+        for node_id in sn[1:]:
+            supernode_roles[node_id] = label
+
+    # Filter nodes by layer and convert to local indices
+    node_id_to_local: dict[str, int] = {}  # node_id -> local feature index
+    nodes = []
+
+    for node in data.get("nodes", []):
+        node_layer = int(node["layer"])
+        if node_layer != layer_filter:
+            continue
+
+        global_index = node["feature"]
+        local_index = extract_local_feature_index(global_index, layer=node_layer)
+        node_id = node["node_id"]
+        node_id_to_local[node_id] = local_index
+
+        role = supernode_roles.get(node_id, "unassigned")
+
+        node_entry = {
+            "featureIndex": local_index,
+            "activation": node.get("activation", 0.0),
+            "role": role,
+        }
+        if "influence" in node:
+            node_entry["influence"] = node["influence"]
+
+        nodes.append(node_entry)
+
+    # Filter edges: both endpoints must be in-layer
+    edges = []
+    for link in data.get("links", []):
+        source_id = link["source"]
+        target_id = link["target"]
+        if source_id in node_id_to_local and target_id in node_id_to_local:
+            edges.append({
+                "source": node_id_to_local[source_id],
+                "target": node_id_to_local[target_id],
+                "weight": link.get("weight", 0.0),
+            })
+
+    # Preserve source metadata
+    metadata = {}
+    if "metadata" in data:
+        metadata = dict(data["metadata"])
+
+    return {
+        "name": name,
+        "description": description,
+        "type": "traced",
+        "source": "neuronpedia",
+        "nodes": nodes,
+        "edges": edges,
+        "metadata": metadata,
     }

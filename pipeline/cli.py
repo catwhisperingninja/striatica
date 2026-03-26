@@ -192,25 +192,28 @@ def cmd_discover(args: argparse.Namespace) -> None:
 # ── Model ──────────────────────────────────────────────────────────────
 
 def cmd_model(args: argparse.Namespace) -> None:
-    """Generate data for any SAELens-compatible model.
+    """Generate data for any SAELens-compatible model or Gemmascope transcoder.
 
-    Accepts either explicit parameters (--sae-release, --sae-hook, etc.)
-    or a Neuronpedia ID shorthand (--np-id "gpt2-small/6-res-jb") which
-    auto-resolves all parameters from the SAELens registry.
+    Accepts:
+      - Neuronpedia ID shorthand (--np-id "gpt2-small/6-res-jb")
+      - Explicit SAELens params (--sae-release, --sae-hook)
+      - Transcoder spec (--transcoder "gemma-2-2b/12/604")
     """
     from pipeline.banner import (
         print_banner, info, success, error, warn, detail, separator,
         reset_step_counter,
     )
-    from pipeline.config import SAEConfig, DATA_DIR, is_public_tier
+    from pipeline.config import SAEConfig, TranscoderConfig, DATA_DIR, is_public_tier
 
     print_banner()
     reset_step_counter()
 
     device = _detect_device(args.device)
 
-    # ── Resolve config from Neuronpedia ID or explicit params ──
-    if args.np_id:
+    # ── Resolve config: transcoder, Neuronpedia ID, or explicit SAELens ──
+    if args.transcoder:
+        cfg = _resolve_transcoder(args)
+    elif args.np_id:
         cfg = _resolve_from_np_id(args.np_id, args)
     elif args.sae_release and args.sae_hook:
         cfg = SAEConfig(
@@ -222,8 +225,9 @@ def cmd_model(args: argparse.Namespace) -> None:
             features_per_batch=args.features_per_batch,
         )
     else:
-        error("Provide either --np-id or (--sae-release + --sae-hook)")
-        detail("Run 'striat discover' to see available models.")
+        error("Provide --transcoder, --np-id, or (--sae-release + --sae-hook)")
+        detail("Run 'striat discover' to see available SAELens models.")
+        detail("For transcoders: striat model --transcoder gemma-2-2b/12/604")
         sys.exit(1)
 
     # Safety: determine whether semantic labels should be included
@@ -231,11 +235,20 @@ def cmd_model(args: argparse.Namespace) -> None:
     include_semantics = args.include_semantics if args.include_semantics else public
     redact = not include_semantics
 
+    # Display config summary
     info("Model", cfg.model_id, emoji="🧬")
-    info("Layer", cfg.layer, emoji="📐")
-    info("SAE release", cfg.sae_release, emoji="🛰️")
-    info("SAE hook", cfg.sae_hook, emoji="🔗")
-    info("Features", f"{cfg.num_batches * cfg.features_per_batch:,}", emoji="⚡")
+    if isinstance(cfg, TranscoderConfig):
+        info("Mode", "Transcoder (Gemmascope)", emoji="🔀")
+        info("Layer", str(cfg.layer), emoji="📐")
+        info("L0 variant", str(cfg.l0_variant), emoji="🎯")
+        info("Repo", cfg.repo_id, emoji="🛰️")
+        info("Width", cfg.width, emoji="📏")
+    else:
+        info("Mode", "SAE (SAELens)", emoji="🔀")
+        info("Layer", cfg.layer, emoji="📐")
+        info("SAE release", cfg.sae_release, emoji="🛰️")
+        info("SAE hook", cfg.sae_hook, emoji="🔗")
+        info("Features", f"{cfg.num_batches * cfg.features_per_batch:,}", emoji="⚡")
     info("Device", device, emoji="🖥️")
     if redact:
         info("Semantics", "REDACTED (model not in public tier)", emoji="🔒")
@@ -246,7 +259,11 @@ def cmd_model(args: argparse.Namespace) -> None:
 
     _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact)
 
-    dataset_file = f"{cfg.model_id}-{cfg.layer}.json"
+    # Output path depends on config type
+    if isinstance(cfg, TranscoderConfig):
+        dataset_file = f"{cfg.model_id}-layer{cfg.layer}-l0{cfg.l0_variant}.json"
+    else:
+        dataset_file = f"{cfg.model_id}-{cfg.layer}.json"
     dataset_path = OUTPUT_DIR / dataset_file
 
     if args.json_export:
@@ -259,6 +276,34 @@ def cmd_model(args: argparse.Namespace) -> None:
         detail("Launch the frontend with:")
         detail("cd frontend && pnpm dev")
         detail(f"Then open: http://localhost:5173/?dataset={dataset_file}")
+
+
+def _resolve_transcoder(args: argparse.Namespace):
+    """Parse --transcoder 'model/layer/l0' into a TranscoderConfig."""
+    from pipeline.config import TranscoderConfig
+    from pipeline.banner import error, detail
+
+    parts = args.transcoder.split("/")
+    if len(parts) != 3:
+        error(f"Invalid transcoder spec: '{args.transcoder}'")
+        detail("Expected: model/layer/l0 (e.g. 'gemma-2-2b/12/604')")
+        sys.exit(1)
+
+    model_id, layer_str, l0_str = parts
+    try:
+        layer = int(layer_str)
+        l0_variant = int(l0_str)
+    except ValueError:
+        error(f"Layer and L0 must be integers, got: layer='{layer_str}', l0='{l0_str}'")
+        sys.exit(1)
+
+    return TranscoderConfig(
+        model_id=model_id,
+        layer=layer,
+        l0_variant=l0_variant,
+        repo_id=args.transcoder_repo,
+        width=args.transcoder_width,
+    )
 
 
 def _resolve_from_np_id(np_id: str, args: argparse.Namespace):
@@ -426,51 +471,90 @@ def cmd_batch(args: argparse.Namespace) -> None:
 
 
 def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_semantics: bool = False) -> None:
-    """Run the full data pipeline for a given SAEConfig."""
+    """Run the full data pipeline for a given SAEConfig or TranscoderConfig.
+
+    Dispatches vector loading and metadata steps based on config type.
+    Steps 3-6 (reduce, cluster, local_dim, assemble) are model-agnostic.
+    """
     from pipeline.banner import step_header, step_done, step_cached, detail, separator, success
-    from pipeline.download import download_features, download_explanations
-    from pipeline.vectors import load_decoder_vectors
+    from pipeline.config import TranscoderConfig
     from pipeline.reduce import reduce_to_3d
     from pipeline.cluster import cluster_points
     from pipeline.prepare import prepare_json
+
+    is_transcoder = isinstance(cfg, TranscoderConfig)
 
     data_dir.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     t_total = time.time()
 
-    # Step 1: Download metadata
-    features_path = data_dir / f"{cfg.model_id}_{cfg.layer}_features.jsonl"
-    if not features_path.exists():
-        t0 = time.time()
-        step_header("download", "Step 1a/6 · Downloading feature metadata")
-        batch_indices = list(range(cfg.num_batches))
-        download_features(cfg.model_id, cfg.layer, batch_indices=batch_indices, output_path=features_path)
-        step_done(time.time() - t0)
-    else:
-        step_cached(features_path.name)
+    # ── Steps 1-2: Model-specific (vector loading + metadata) ──
 
-    explanations_path = data_dir / f"{cfg.model_id}_{cfg.layer}_explanations.jsonl"
-    if not explanations_path.exists():
-        t0 = time.time()
-        step_header("download", "Step 1b/6 · Downloading explanations")
-        batch_indices = list(range(cfg.num_batches))
-        download_explanations(cfg.model_id, cfg.layer, batch_indices=batch_indices, output_path=explanations_path)
-        step_done(time.time() - t0)
-    else:
-        step_cached(explanations_path.name)
+    features_path = None
+    explanations_path = None
 
-    # Step 2: Load decoder vectors
-    t0 = time.time()
-    step_header("vectors", "Step 2/6 · Loading SAELens decoder vectors")
-    vectors = load_decoder_vectors(cfg.sae_release, cfg.sae_hook, device=device)
-    detail(f"{vectors.shape[0]:,} vectors × {vectors.shape[1]} dimensions")
-    step_done(time.time() - t0)
+    if is_transcoder:
+        # Transcoder mode: vectors from HuggingFace npz, no Neuronpedia metadata
+        from pipeline.vectors import load_transcoder_vectors
+
+        step_header("skip", "Step 1/6 · No Neuronpedia metadata for transcoders")
+        detail("Transcoder features don't have Neuronpedia explanations yet")
+        step_done(0)
+
+        t0 = time.time()
+        step_header("vectors", "Step 2/6 · Loading transcoder decoder vectors")
+        detail(f"Repo: {cfg.repo_id}")
+        detail(f"Path: layer_{cfg.layer}/{cfg.width}/average_l0_{cfg.l0_variant}/params.npz")
+        vectors = load_transcoder_vectors(
+            layer=cfg.layer,
+            l0_variant=cfg.l0_variant,
+            repo_id=cfg.repo_id,
+            width=cfg.width,
+        )
+        detail(f"{vectors.shape[0]:,} vectors × {vectors.shape[1]} dimensions")
+        step_done(time.time() - t0)
+
+        layer_str = f"layer{cfg.layer}-l0{cfg.l0_variant}"
+    else:
+        # SAE mode: vectors from SAELens, metadata from Neuronpedia S3
+        from pipeline.download import download_features, download_explanations
+        from pipeline.vectors import load_decoder_vectors
+
+        features_path = data_dir / f"{cfg.model_id}_{cfg.layer}_features.jsonl"
+        if not features_path.exists():
+            t0 = time.time()
+            step_header("download", "Step 1a/6 · Downloading feature metadata")
+            batch_indices = list(range(cfg.num_batches))
+            download_features(cfg.model_id, cfg.layer, batch_indices=batch_indices, output_path=features_path)
+            step_done(time.time() - t0)
+        else:
+            step_cached(features_path.name)
+
+        explanations_path = data_dir / f"{cfg.model_id}_{cfg.layer}_explanations.jsonl"
+        if not explanations_path.exists():
+            t0 = time.time()
+            step_header("download", "Step 1b/6 · Downloading explanations")
+            batch_indices = list(range(cfg.num_batches))
+            download_explanations(cfg.model_id, cfg.layer, batch_indices=batch_indices, output_path=explanations_path)
+            step_done(time.time() - t0)
+        else:
+            step_cached(explanations_path.name)
+
+        t0 = time.time()
+        step_header("vectors", "Step 2/6 · Loading SAELens decoder vectors")
+        vectors = load_decoder_vectors(cfg.sae_release, cfg.sae_hook, device=device)
+        detail(f"{vectors.shape[0]:,} vectors × {vectors.shape[1]} dimensions")
+        step_done(time.time() - t0)
+
+        layer_str = cfg.layer
+
+    # ── Steps 3-6: Model-agnostic (geometry pipeline) ──
 
     # Step 3: Dimensionality reduction
     t0 = time.time()
     step_header("reduce", "Step 3/6 · PCA + UMAP → 3D")
-    coords = reduce_to_3d(vectors, pca_dim=50)
+    coords, pca_variance = reduce_to_3d(vectors, pca_dim=50, return_pca_variance=True)
     step_done(time.time() - t0)
 
     # Step 4: Clustering
@@ -494,17 +578,50 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     _, growth_curves = estimate_local_dim_vgt(vectors, return_curves=True)
     step_done(time.time() - t0)
 
+    # Step 5.5: Validation
+    from pipeline.validate import (
+        validate_level1_arrays, validate_level2,
+        write_validation_sidecar, ValidationError,
+    )
+
+    t0 = time.time()
+    step_header("validate", "Step 5.5/6 · Validating pipeline output")
+
+    # L1: structural integrity (hard gate)
+    detail("Level 1: structural integrity...")
+    l1_report = validate_level1_arrays(coords, labels, local_dims)
+    if not l1_report.passed:
+        l1_report.print_scorecard()
+        raise ValidationError(l1_report)
+    detail("Level 1: PASS")
+
+    # L2: embedding quality scorecard
+    detail("Level 2: embedding quality (trustworthiness, neighborhood overlap)...")
+    l2_report = validate_level2(
+        vectors, coords, labels,
+        local_dims=local_dims,
+        pca_explained_variance=pca_variance,
+    )
+    l2_report.print_scorecard()
+    if l2_report.has_warnings:
+        detail("⚠  Embedding quality warnings — review scorecard above")
+    step_done(time.time() - t0)
+
     # Step 6: Assemble JSON
     t0 = time.time()
     step_header("assemble", "Step 6/6 · Preparing JSON for frontend")
-    output = OUTPUT_DIR / f"{cfg.model_id}-{cfg.layer}.json"
+    output = OUTPUT_DIR / f"{cfg.model_id}-{layer_str}.json"
     prepare_json(
         coords, labels, features_path, explanations_path, output,
         local_dimensions=local_dims, dim_method="pr", growth_curves=growth_curves,
-        model=cfg.model_id, layer=cfg.layer,
+        model=cfg.model_id, layer=layer_str,
         redact_semantics=redact_semantics,
     )
     step_done(time.time() - t0)
+
+    # Write validation sidecar
+    val_sidecar = write_validation_sidecar(output, l1_report, l2_report=l2_report)
+    detail(f"📊  Validation: {val_sidecar.name}")
 
     elapsed = time.time() - t_total
     minutes = int(elapsed // 60)
@@ -514,17 +631,27 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     import datetime
     metadata = {
         "model_id": cfg.model_id,
-        "layer": cfg.layer,
-        "sae_release": cfg.sae_release,
-        "sae_hook": cfg.sae_hook,
-        "num_features": cfg.num_batches * cfg.features_per_batch,
+        "layer": layer_str,
+        "pipeline_mode": "transcoder" if is_transcoder else "sae",
+        "num_features": int(vectors.shape[0]),
+        "vector_dim": int(vectors.shape[1]),
         "processing_time_seconds": round(elapsed),
-        "pipeline_version": "0.2.0",
+        "pipeline_version": "0.3.0",
         "device": device,
         "redact_semantics": redact_semantics,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
-    metadata_path = OUTPUT_DIR / f"{cfg.model_id}-{cfg.layer}-metadata.json"
+    if is_transcoder:
+        metadata["transcoder"] = {
+            "repo_id": cfg.repo_id,
+            "width": cfg.width,
+            "l0_variant": cfg.l0_variant,
+        }
+    else:
+        metadata["sae_release"] = cfg.sae_release
+        metadata["sae_hook"] = cfg.sae_hook
+
+    metadata_path = OUTPUT_DIR / f"{cfg.model_id}-{layer_str}-metadata.json"
     import json as _json
     with open(metadata_path, "w") as _f:
         _json.dump(metadata, _f, indent=2)
@@ -533,6 +660,48 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     success(f"Complete · {minutes}m {seconds}s")
     detail(f"📁  {output}")
     detail(f"📋  {metadata_path}")
+
+
+# ── Validate ─────────────────────────────────────────────────────────────
+
+def cmd_validate(args: argparse.Namespace) -> None:
+    """Run validation on an existing JSON output file."""
+    import json as _json
+    from pipeline.banner import print_banner, step_header, step_done, detail, success, separator
+    from pipeline.validate import validate_level1_json, validate_level3
+
+    print_banner()
+
+    json_path = Path(args.json_file)
+    if not json_path.exists():
+        print(f"  ✗ File not found: {json_path}")
+        sys.exit(1)
+
+    step_header("validate", f"Validating {json_path.name}")
+    with open(json_path) as f:
+        result = _json.load(f)
+
+    # L1
+    detail("Level 1: structural integrity...")
+    l1 = validate_level1_json(result)
+    l1.print_scorecard()
+
+    if not l1.passed:
+        print("  ✗ Level 1 FAILED — JSON has structural defects")
+        sys.exit(1)
+
+    # L3 (optional)
+    if args.compare:
+        ref_path = Path(args.compare)
+        if not ref_path.exists():
+            print(f"  ✗ Reference file not found: {ref_path}")
+            sys.exit(1)
+        detail(f"Level 3: comparing against {ref_path.name}...")
+        l3 = validate_level3(result, ref_path)
+        l3.print_scorecard()
+
+    separator()
+    success("Validation complete")
 
 
 # ── Circuits ─────────────────────────────────────────────────────────────
@@ -598,28 +767,36 @@ def main() -> None:
     # ── model ──
     p_model = sub.add_parser(
         "model",
-        help="Generate data for any SAELens-compatible model",
+        help="Generate data for any SAELens-compatible model or Gemmascope transcoder",
         description=(
-            "Process a single model. Provide either a Neuronpedia ID (--np-id) for\n"
-            "auto-resolution, or explicit SAELens parameters.\n\n"
-            "Neuronpedia ID mode (recommended):\n"
+            "Process a single model. Three input modes:\n\n"
+            "Neuronpedia ID (recommended for SAELens models):\n"
             "  striat model --np-id gpt2-small/6-res-jb\n\n"
-            "Explicit mode (for models not in registry):\n"
+            "Explicit SAELens parameters:\n"
             "  striat model --model gpt2-small --layer 6-res-jb \\\n"
-            "    --sae-release gpt2-small-res-jb --sae-hook blocks.6.hook_resid_pre"
+            "    --sae-release gpt2-small-res-jb --sae-hook blocks.6.hook_resid_pre\n\n"
+            "Transcoder mode (Gemmascope):\n"
+            "  striat model --transcoder gemma-2-2b/12/604\n"
+            "  striat model --transcoder gemma-2-2b/12/604 --transcoder-repo google/gemma-scope-2b-pt-transcoders"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    # Neuronpedia ID shorthand (preferred path)
+    # Neuronpedia ID shorthand (preferred path for SAELens)
     p_model.add_argument("--np-id", help="Neuronpedia ID (e.g. 'gpt2-small/6-res-jb'). Auto-resolves all params.")
     # Explicit SAELens parameters (fallback path)
     p_model.add_argument("--model", help="Model ID (e.g., gpt2-small, gemma-2b)")
     p_model.add_argument("--layer", help="Layer identifier (e.g., 6-res-jb)")
     p_model.add_argument("--sae-release", help="SAELens release name")
     p_model.add_argument("--sae-hook", help="SAELens hook point (e.g., blocks.6.hook_resid_pre)")
-    # Batch configuration
-    p_model.add_argument("--num-batches", type=int, default=24, help="S3 batch file count (default: 24)")
-    p_model.add_argument("--features-per-batch", type=int, default=1024, help="Features per batch (default: 1024)")
+    # Transcoder mode (Gemmascope)
+    p_model.add_argument("--transcoder", help="Transcoder spec: model/layer/l0 (e.g. 'gemma-2-2b/12/604')")
+    p_model.add_argument("--transcoder-repo", default="google/gemma-scope-2b-pt-transcoders",
+                         help="HuggingFace repo for transcoder weights (default: google/gemma-scope-2b-pt-transcoders)")
+    p_model.add_argument("--transcoder-width", default="width_16k",
+                         help="Width variant directory (default: width_16k)")
+    # Batch configuration (SAELens only)
+    p_model.add_argument("--num-batches", type=int, default=24, help="S3 batch file count (default: 24, SAELens only)")
+    p_model.add_argument("--features-per-batch", type=int, default=1024, help="Features per batch (default: 1024, SAELens only)")
     # Device and output
     p_model.add_argument("--device", default="auto", help="Torch device: auto, cuda, mps, or cpu (default: auto)")
     p_model.add_argument("--json-export", action="store_true", help="Export JSON only, skip frontend launch instructions")
@@ -641,6 +818,12 @@ def main() -> None:
     p_batch.add_argument("--force", action="store_true", help="Reprocess models even if output exists")
     p_batch.add_argument("--continue-on-error", action="store_true", help="Continue to next model on failure")
     p_batch.set_defaults(func=cmd_batch)
+
+    # ── validate ──
+    p_validate = sub.add_parser("validate", help="Validate a pipeline output JSON")
+    p_validate.add_argument("json_file", help="Path to output JSON file")
+    p_validate.add_argument("--compare", help="Reference JSON for Level 3 comparison")
+    p_validate.set_defaults(func=cmd_validate)
 
     # ── circuits ──
     p_circuits = sub.add_parser(

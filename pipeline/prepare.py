@@ -13,8 +13,8 @@ import numpy as np
 def prepare_json(
     coords: np.ndarray,
     labels: np.ndarray,
-    features_jsonl: Path,
-    explanations_jsonl: Path,
+    features_jsonl: Path | None,
+    explanations_jsonl: Path | None,
     output_path: Path,
     local_dimensions: np.ndarray | None = None,
     dim_method: str = "pr",
@@ -23,53 +23,41 @@ def prepare_json(
     layer: str = "6-res-jb",
     redact_semantics: bool = False,
 ) -> dict:
-    """Assemble final JSON combining 3D coords, clusters, and metadata."""
+    """Assemble final JSON combining 3D coords, clusters, and metadata.
+
+    features_jsonl and explanations_jsonl can be None (e.g. for transcoder
+    pipelines that don't have Neuronpedia metadata). In that case, feature
+    records get geometry-only defaults.
+    """
     n = len(coords)
     _t_start = _time.monotonic()
 
-    # ── Validation assertions ──
-    if coords.ndim != 2 or coords.shape[1] != 3:
-        raise ValueError(f"coords must be (n, 3), got {coords.shape}")
-    if labels.shape != (n,):
-        raise ValueError(
-            f"labels length {len(labels)} does not match coords length {n}"
-        )
-    if local_dimensions is not None and local_dimensions.shape != (n,):
-        raise ValueError(
-            f"local_dimensions length {len(local_dimensions)} does not match "
-            f"coords length {n}"
-        )
-    if not np.all(np.isfinite(coords)):
-        raise ValueError("coords contains NaN or Inf values")
-
-    # Load feature metadata
-    print(f"    Loading feature metadata from {features_jsonl.name}...")
+    # Load feature metadata (if available)
     feature_meta = {}
-    with open(features_jsonl) as f:
-        for line in f:
-            d = json.loads(line)
-            idx = int(d["index"])
-            feature_meta[idx] = {
-                "maxAct": d.get("maxActApprox", 0),
-                "fracNonzero": d.get("frac_nonzero", 0),
-                "topSimilar": d.get("topkCosSimIndices", [])[:5],
-                "posTokens": d.get("pos_str", [])[:5],
-                "negTokens": d.get("neg_str", [])[:3],
-            }
-    print(f"    Loaded {len(feature_meta):,} feature records")
-    if len(feature_meta) < n:
-        print(f"    ⚠  WARNING: Only {len(feature_meta):,} feature records for "
-              f"{n:,} coordinates — {n - len(feature_meta):,} features will have "
-              f"empty metadata")
+    if features_jsonl is not None and features_jsonl.exists():
+        print(f"    Loading feature metadata from {features_jsonl.name}...")
+        with open(features_jsonl) as f:
+            for line in f:
+                d = json.loads(line)
+                idx = int(d["index"])
+                feature_meta[idx] = {
+                    "maxAct": d.get("maxActApprox", 0),
+                    "fracNonzero": d.get("frac_nonzero", 0),
+                    "topSimilar": d.get("topkCosSimIndices", [])[:5],
+                    "posTokens": d.get("pos_str", [])[:5],
+                    "negTokens": d.get("neg_str", [])[:3],
+                }
+        print(f"    Loaded {len(feature_meta):,} feature records")
+    else:
+        print(f"    No feature metadata available — geometry only")
 
-    # Load explanations
+    # Load explanations (if available and not redacted)
+    explanations = {}
     if redact_semantics:
         print(f"    ⚠  REDACTING semantic labels (model not in public tier)")
         print(f"    Skipping explanation loading — output will contain geometry only")
-        explanations = {}
-    else:
+    elif explanations_jsonl is not None and explanations_jsonl.exists():
         print(f"    Loading explanations from {explanations_jsonl.name}...")
-        explanations = {}
         with open(explanations_jsonl) as f:
             for line in f:
                 d = json.loads(line)
@@ -77,6 +65,8 @@ def prepare_json(
                 if idx not in explanations:
                     explanations[idx] = d.get("description", "")
         print(f"    Loaded {len(explanations):,} explanations")
+    else:
+        print(f"    No explanations available")
 
     # Flatten positions to interleaved array
     print(f"    Flattening {n:,} positions...")

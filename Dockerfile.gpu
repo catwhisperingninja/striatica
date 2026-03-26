@@ -1,45 +1,79 @@
-# striatica pipeline — GPU variant for Lambda AI / cloud GPU
+# striatica pipeline — GPU variant for Vast.ai / Lambda / cloud GPU instances
+# CUDA 12.4 + Python 3.12 + PyTorch with CUDA support
 #
-# Usage:
-#   docker build -f Dockerfile.gpu -t striatica-pipeline-gpu .
-#   docker run --gpus all -v $(pwd)/output:/app/output striatica-pipeline-gpu \
-#     model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
-#   docker run --gpus all -v $(pwd)/output:/app/output striatica-pipeline-gpu \
-#     batch --np-ids '...' --device cuda
+# Build:
+#   docker build -f Dockerfile.gpu -t striatica-pipeline:gpu .
+#
+# Run:
+#   docker run --gpus all -v $(pwd)/output:/app/output -it \
+#     striatica-pipeline:gpu bash
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
-# Python 3.12
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Python 3.12 from deadsnakes PPA (not in base Ubuntu 22.04)
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && \
     apt-get install -y --no-install-recommends \
         python3.12 \
         python3.12-venv \
-        python3-pip \
+        python3.12-dev \
         build-essential \
         git \
+        curl \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
 
-# Install Poetry
-RUN pip install --no-cache-dir --break-system-packages poetry
+# pip for Python 3.12 (apt python3-pip installs for system python, not 3.12)
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python
 
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock* ./
+# PyTorch with CUDA — install FIRST so later deps don't pull CPU torch
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu124
 
-# Install dependencies only (--no-root: source not copied yet)
-RUN poetry config virtualenvs.create false && \
-    poetry install --extras ml --without dev --no-interaction --no-root
+# === UMAP REPRODUCIBILITY CHAIN — exact pins ===
+# These versions produced the Feb 27 2026 dataset positions.
+# Changing ANY of these will produce different 3D embeddings
+# even with the same random_state. Do not widen these ranges.
+RUN pip install --no-cache-dir \
+    "numpy==2.4.2" \
+    "scipy==1.17.1" \
+    "scikit-learn==1.8.0" \
+    "umap-learn==0.5.11" \
+    "hdbscan==0.8.41"
 
+# Other pipeline deps
+RUN pip install --no-cache-dir \
+    "requests>=2.32.5,<3.0.0" \
+    "huggingface-hub>=0.28.0,<1.0.0" \
+    "safetensors>=0.5.0,<1.0.0" \
+    "python-dotenv>=1.1.0,<2.0.0"
+
+# ML optional deps (SAELens, TransformerLens, transformers)
+RUN pip install --no-cache-dir \
+    "sae-lens>=6.37.0" \
+    "transformer-lens>=2.12.0" \
+    "transformers>=4.40.0,<5.0.0"
+
+# Copy source and install project (striat entrypoint)
+COPY pyproject.toml ./
 COPY pipeline/ pipeline/
 COPY scripts/ scripts/
-
-# Now install the project itself (the striat entry point)
-RUN poetry install --extras ml --without dev --no-interaction
+COPY tests/ tests/
+RUN pip install --no-cache-dir -e .
 
 RUN mkdir -p /app/output /app/data
 ENV STRIATICA_OUTPUT_DIR=/app/output
 ENV STRIATICA_DATA_DIR=/app/data
+
+# Smoke test at build time
+RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.backends.cuda.is_built()}')" || true
+RUN python -c "from pipeline.vectors import load_transcoder_vectors; print('transcoder loader OK')"
 
 ENTRYPOINT ["python", "-m", "pipeline.cli"]
 CMD ["--help"]

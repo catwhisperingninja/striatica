@@ -1,0 +1,421 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "striatica-data-quality",
+    "title": "Striatica — Data Quality",
+    "description": "Structural analysis of pipeline output: cluster topology, VGT distributions, activation stats, and cross-model comparison.",
+    "tags": ["striatica", "data-quality", "clusters", "vgt"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "",
+    "time": {
+      "from": "now-30d",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "model_id",
+          "type": "query",
+          "datasource": "${DS_PROMETHEUS}",
+          "query": "label_values(striatica_pipeline_run_info, model_id)",
+          "refresh": 2,
+          "multi": true,
+          "includeAll": true
+        },
+        {
+          "name": "run_id",
+          "type": "query",
+          "datasource": "${DS_PROMETHEUS}",
+          "query": "label_values(striatica_pipeline_run_info{model_id=~\"$model_id\"}, run_id)",
+          "refresh": 2,
+          "multi": false,
+          "sort": 2
+        }
+      ]
+    },
+    "panels": [
+      {
+        "title": "Cluster Count",
+        "description": "Number of HDBSCAN clusters found. Sudden change across runs = structural shift.",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_hdbscan_cluster_count{run_id=\"$run_id\"}",
+            "legendFormat": "Clusters"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "value",
+          "graphMode": "area"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"fixedColor": "#73BF69", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "Uncategorized %",
+        "description": "Fraction of features that didn't cluster. High = noisy or underfit.",
+        "type": "gauge",
+        "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_hdbscan_uncategorized_fraction{run_id=\"$run_id\"}",
+            "legendFormat": "Uncategorized"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 0.3, "color": "yellow"},
+                {"value": 0.5, "color": "orange"},
+                {"value": 0.7, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Mean VGT",
+        "description": "Average local intrinsic dimension across all features.",
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_vgt_mean{run_id=\"$run_id\"}",
+            "legendFormat": "Mean VGT"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 2,
+            "color": {"fixedColor": "#B877D9", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "PCA Variance (Top 4)",
+        "description": "How much structure PCA captures before UMAP. Higher = more linear structure.",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(striatica_pca_variance_ratio{run_id=\"$run_id\", component=~\"0|1|2|3\"})",
+            "legendFormat": "Top-4 Variance"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 1
+          }
+        }
+      },
+      {
+        "title": "Feature Count",
+        "type": "stat",
+        "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_feature_count{run_id=\"$run_id\"}",
+            "legendFormat": "Features"
+          }
+        ]
+      },
+      {
+        "title": "Model",
+        "type": "stat",
+        "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_run_info{run_id=\"$run_id\"}",
+            "legendFormat": "{{model_id}}"
+          }
+        ],
+        "options": {
+          "textMode": "name",
+          "colorMode": "none"
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 4, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Cluster Size Distribution",
+        "description": "Number of features per cluster. Are clusters balanced or is one giant?",
+        "type": "barchart",
+        "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_hdbscan_cluster_size{run_id=\"$run_id\"}",
+            "legendFormat": "Cluster #{{cluster}}"
+          }
+        ],
+        "options": {
+          "orientation": "vertical",
+          "showValue": "auto",
+          "barWidth": 0.8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "title": "VGT Distribution (Histogram)",
+        "description": "Distribution of local intrinsic dimensions. Peak at low values = convergence singularity geometry is real.",
+        "type": "histogram",
+        "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_vgt_dimension_bucket{run_id=\"$run_id\"}",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "options": {
+          "bucketSize": 1,
+          "combine": false,
+          "fillOpacity": 80
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"fixedColor": "#B877D9", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 13, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "VGT vs Activation Frequency",
+        "description": "Scatter: local dimension vs frac_nonzero. Pearson r should be ~0.03. If higher, activation frequency is contaminating geometry.",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 14, "w": 12, "h": 10},
+        "targets": [
+          {
+            "expr": "striatica_vgt_vs_activation{run_id=\"$run_id\"}",
+            "legendFormat": "Feature #{{feature_index}}"
+          }
+        ],
+        "options": {
+          "tooltip": {"mode": "single"}
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "points",
+              "pointSize": 3
+            },
+            "color": {"fixedColor": "#3274D9", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "VGT vs Activation — Correlation",
+        "description": "Pearson r between VGT and frac_nonzero. Should be near zero. High = concern.",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 14, "w": 6, "h": 5},
+        "targets": [
+          {
+            "expr": "striatica_vgt_activation_pearson_r{run_id=\"$run_id\"}",
+            "legendFormat": "Pearson r"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 0.1, "color": "yellow"},
+                {"value": 0.3, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Mean VGT by Cluster",
+        "description": "Which clusters are geometrically converged (low VGT) vs spread out?",
+        "type": "barchart",
+        "gridPos": {"x": 12, "y": 19, "w": 12, "h": 5},
+        "targets": [
+          {
+            "expr": "striatica_vgt_mean_by_cluster{run_id=\"$run_id\"}",
+            "legendFormat": "Cluster #{{cluster}}"
+          }
+        ],
+        "options": {
+          "orientation": "vertical",
+          "showValue": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "continuous-BlPu"},
+            "decimals": 1
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 24, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "PCA Variance by Component",
+        "description": "Variance explained per principal component. Shows how much linear structure exists before UMAP.",
+        "type": "barchart",
+        "gridPos": {"x": 0, "y": 25, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_pca_variance_ratio{run_id=\"$run_id\"}",
+            "legendFormat": "PC{{component}}"
+          }
+        ],
+        "options": {
+          "orientation": "vertical",
+          "showValue": "always"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 2,
+            "color": {"fixedColor": "#3274D9", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "Nearest Neighbor Distance Distribution",
+        "description": "Distribution of k-NN distances. Tight = dense manifold. Spread = sparse/noisy.",
+        "type": "histogram",
+        "gridPos": {"x": 12, "y": 25, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_nn_distance_bucket{run_id=\"$run_id\"}",
+            "legendFormat": "{{le}}"
+          }
+        ],
+        "options": {
+          "bucketSize": 0.05,
+          "fillOpacity": 70
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"fixedColor": "#FF9830", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 33, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Cross-Model Comparison",
+        "description": "Side-by-side structural metrics across all models/runs. Are geometric properties universal?",
+        "type": "table",
+        "gridPos": {"x": 0, "y": 34, "w": 24, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_hdbscan_cluster_count",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          },
+          {
+            "expr": "striatica_hdbscan_uncategorized_fraction",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          },
+          {
+            "expr": "striatica_vgt_mean",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          },
+          {
+            "expr": "striatica_pipeline_feature_count",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true,
+                "__name__": true,
+                "job": true,
+                "instance": true
+              },
+              "renameByName": {
+                "model_id": "Model",
+                "run_id": "Run",
+                "Value #A": "Clusters",
+                "Value #B": "Uncategorized %",
+                "Value #C": "Mean VGT",
+                "Value #D": "Features"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource for striatica pipeline metrics",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0"},
+    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""},
+    {"type": "panel", "id": "barchart", "name": "Bar chart", "version": ""},
+    {"type": "panel", "id": "histogram", "name": "Histogram", "version": ""},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""}
+  ]
+}

@@ -7,7 +7,8 @@ import sys
 from unittest.mock import patch, MagicMock
 
 import pytest
-from pipeline.cli import _detect_device, main
+from pipeline.cli import _detect_device, cmd_model, _resolve_transcoder, _run_process_pipeline
+from pipeline.config import TranscoderConfig
 
 
 class TestDetectDevice:
@@ -129,3 +130,96 @@ class TestModelArgparse:
         args = self._parse_model_args(["--include-semantics", "--json-export"])
         assert args.include_semantics is True
         assert args.json_export is True
+
+
+class TestTranscoderCLI:
+    """Tests for transcoder-specific CLI behavior."""
+
+    def _transcoder_args(self) -> argparse.Namespace:
+        return argparse.Namespace(
+            transcoder="gemma-2-2b/12/604",
+            transcoder_repo="google/gemma-scope-2b-pt-transcoders",
+            transcoder_width="width_16k",
+            np_id=None,
+            sae_release=None,
+            sae_hook=None,
+            model=None,
+            layer=None,
+            num_batches=24,
+            features_per_batch=1024,
+            device="cpu",
+            include_semantics=False,
+            json_export=True,
+        )
+
+    def test_cmd_model_uses_transcoder_resolution_and_pipeline(self, monkeypatch):
+        """cmd_model should resolve --transcoder and run the pipeline with that config."""
+        args = self._transcoder_args()
+        cfg = TranscoderConfig(model_id="gemma-2-2b", layer=12, l0_variant=604)
+        calls = {}
+
+        monkeypatch.setattr("pipeline.cli._detect_device", lambda *_: "cpu")
+        monkeypatch.setattr("pipeline.cli._resolve_transcoder", lambda _args: cfg)
+        monkeypatch.setattr(
+            "pipeline.cli._run_process_pipeline",
+            lambda c, data_dir, device, redact_semantics: calls.update(
+                cfg=c, data_dir=data_dir, device=device, redact_semantics=redact_semantics
+            ),
+        )
+
+        cmd_model(args)
+
+        assert calls["cfg"] == cfg
+        assert calls["device"] == "cpu"
+        assert calls["redact_semantics"] is True  # non-public model defaults to redaction
+
+    def test_resolve_transcoder_parses_valid_spec(self):
+        """_resolve_transcoder should parse model/layer/l0 into TranscoderConfig."""
+        args = argparse.Namespace(
+            transcoder="gemma-2-2b/12/604",
+            transcoder_repo="org/custom-repo",
+            transcoder_width="width_32k",
+        )
+        cfg = _resolve_transcoder(args)
+        assert isinstance(cfg, TranscoderConfig)
+        assert cfg.model_id == "gemma-2-2b"
+        assert cfg.layer == 12
+        assert cfg.l0_variant == 604
+        assert cfg.repo_id == "org/custom-repo"
+        assert cfg.width == "width_32k"
+
+    def test_resolve_transcoder_rejects_invalid_format(self):
+        """_resolve_transcoder should exit for malformed transcoder spec."""
+        args = argparse.Namespace(
+            transcoder="gemma-2-2b/12",
+            transcoder_repo="google/gemma-scope-2b-pt-transcoders",
+            transcoder_width="width_16k",
+        )
+        with pytest.raises(SystemExit) as exc:
+            _resolve_transcoder(args)
+        assert exc.value.code == 1
+
+    def test_run_process_pipeline_dispatches_transcoder_loader(self, monkeypatch, tmp_path):
+        """_run_process_pipeline should call load_transcoder_vectors for TranscoderConfig."""
+        cfg = TranscoderConfig(model_id="gemma-2-2b", layer=12, l0_variant=604)
+
+        called = {"load_transcoder_vectors": False}
+
+        monkeypatch.setattr("pipeline.cli.OUTPUT_DIR", tmp_path / "out")
+        monkeypatch.setattr("pipeline.vectors.load_transcoder_vectors", lambda **kwargs: (
+            called.__setitem__("load_transcoder_vectors", True),
+            kwargs,
+            __import__("numpy").ones((3, 2)),
+        )[2])
+        monkeypatch.setattr("pipeline.reduce.reduce_to_3d", lambda _v, pca_dim: __import__("numpy").zeros((3, 3)))
+        monkeypatch.setattr("pipeline.cluster.cluster_points", lambda _coords: __import__("numpy").array([0, 0, 1]))
+        monkeypatch.setattr("pipeline.local_dim.estimate_local_dim", lambda _v, method: __import__("numpy").array([1.0, 1.1, 1.2]))
+        monkeypatch.setattr(
+            "pipeline.local_dim.estimate_local_dim_vgt",
+            lambda _v, return_curves: (__import__("numpy").array([1.0, 1.1, 1.2]), {0: [1.0], 1: [1.0], 2: [1.0]}),
+        )
+        monkeypatch.setattr("pipeline.prepare.prepare_json", lambda *args, **kwargs: None)
+
+        _run_process_pipeline(cfg, tmp_path / "data", device="cpu", redact_semantics=True)
+
+        assert called["load_transcoder_vectors"] is True

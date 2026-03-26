@@ -1,0 +1,371 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "striatica-cost-capacity",
+    "title": "Striatica — Cost & Capacity Planning",
+    "description": "Track compute spend, compare providers, estimate costs for larger models, and plan budget.",
+    "tags": ["striatica", "cost", "capacity", "planning"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "",
+    "time": {
+      "from": "now-90d",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "model_id",
+          "type": "query",
+          "datasource": "${DS_PROMETHEUS}",
+          "query": "label_values(striatica_pipeline_run_info, model_id)",
+          "refresh": 2,
+          "multi": true,
+          "includeAll": true
+        },
+        {
+          "name": "provider",
+          "type": "query",
+          "datasource": "${DS_PROMETHEUS}",
+          "query": "label_values(striatica_pipeline_run_info, provider)",
+          "refresh": 2,
+          "multi": true,
+          "includeAll": true
+        }
+      ]
+    },
+    "panels": [
+      {
+        "title": "Total Spend (All Time)",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "sum(striatica_run_cost_usd{model_id=~\"$model_id\", provider=~\"$provider\"})",
+            "legendFormat": "Total"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 50, "color": "yellow"},
+                {"value": 200, "color": "red"}
+              ]
+            }
+          }
+        },
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "value"
+        }
+      },
+      {
+        "title": "Total Runs",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "count(striatica_pipeline_run_info{model_id=~\"$model_id\", provider=~\"$provider\"})",
+            "legendFormat": "Runs"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "none"
+        }
+      },
+      {
+        "title": "Avg Cost per Run",
+        "type": "stat",
+        "gridPos": {"x": 10, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(striatica_run_cost_usd{model_id=~\"$model_id\", provider=~\"$provider\"})",
+            "legendFormat": "Avg"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "title": "Avg Time per Run",
+        "type": "stat",
+        "gridPos": {"x": 14, "y": 0, "w": 5, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(striatica_pipeline_total_duration_seconds{model_id=~\"$model_id\", provider=~\"$provider\"})",
+            "legendFormat": "Avg"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {"unit": "s"}
+        }
+      },
+      {
+        "title": "Cost per Feature",
+        "description": "Scaling metric. Does doubling features double cost?",
+        "type": "stat",
+        "gridPos": {"x": 19, "y": 0, "w": 5, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(striatica_run_cost_usd{model_id=~\"$model_id\"} / striatica_pipeline_feature_count{model_id=~\"$model_id\"})",
+            "legendFormat": "$/feature"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 6
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 4, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Cost per Run (Timeline)",
+        "description": "Track spend over time. Identify trends and anomalies.",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 5, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_run_cost_usd{model_id=~\"$model_id\", provider=~\"$provider\"}",
+            "legendFormat": "{{model_id}} ({{provider}})"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "custom": {
+              "drawStyle": "bars",
+              "barAlignment": 0,
+              "fillOpacity": 70,
+              "barWidthFactor": 0.6
+            },
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "title": "Duration per Run (Timeline)",
+        "type": "timeseries",
+        "gridPos": {"x": 12, "y": 5, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_total_duration_seconds{model_id=~\"$model_id\", provider=~\"$provider\"}",
+            "legendFormat": "{{model_id}} ({{provider}})"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "drawStyle": "bars",
+              "barAlignment": 0,
+              "fillOpacity": 70,
+              "barWidthFactor": 0.6
+            },
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 13, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Provider Comparison",
+        "description": "Cost and duration by provider. Find the best price/performance.",
+        "type": "table",
+        "gridPos": {"x": 0, "y": 14, "w": 24, "h": 8},
+        "targets": [
+          {
+            "expr": "avg by (provider, instance_type) (striatica_run_cost_usd{model_id=~\"$model_id\"})",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          },
+          {
+            "expr": "avg by (provider, instance_type) (striatica_pipeline_total_duration_seconds{model_id=~\"$model_id\"})",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          },
+          {
+            "expr": "count by (provider, instance_type) (striatica_pipeline_run_info{model_id=~\"$model_id\"})",
+            "format": "table",
+            "instant": true,
+            "legendFormat": ""
+          }
+        ],
+        "transformations": [
+          {
+            "id": "merge",
+            "options": {}
+          },
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true,
+                "__name__": true,
+                "job": true,
+                "instance": true
+              },
+              "renameByName": {
+                "provider": "Provider",
+                "instance_type": "GPU",
+                "Value #A": "Avg Cost ($)",
+                "Value #B": "Avg Duration (s)",
+                "Value #C": "Runs"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 22, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Scaling Curve — Time vs Feature Count",
+        "description": "How does compute time scale with more features? Linear, quadratic, worse?",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 23, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_total_duration_seconds",
+            "legendFormat": "{{model_id}} — {{feature_count}} features"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "custom": {
+              "drawStyle": "points",
+              "pointSize": 8
+            },
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "title": "Scaling Curve — Cost vs Feature Count",
+        "description": "Budget planning for larger models. What will width_64k cost?",
+        "type": "timeseries",
+        "gridPos": {"x": 12, "y": 23, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_run_cost_usd",
+            "legendFormat": "{{model_id}} — {{feature_count}} features"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "custom": {
+              "drawStyle": "points",
+              "pointSize": 8
+            },
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 31, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Monthly Spend",
+        "description": "Rolling monthly compute spend.",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 32, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "sum(increase(striatica_run_cost_usd_total[30d]))",
+            "legendFormat": "Monthly Total"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "custom": {
+              "drawStyle": "bars",
+              "fillOpacity": 60
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 100, "color": "yellow"},
+                {"value": 500, "color": "red"}
+              ]
+            },
+            "color": {"mode": "thresholds"}
+          }
+        }
+      },
+      {
+        "title": "Projected Costs",
+        "description": "Based on current scaling, what will larger model runs cost?",
+        "type": "table",
+        "gridPos": {"x": 12, "y": 32, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "label_replace(vector(0), \"width\", \"16k (current)\", \"\", \"\")",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "options": {
+          "footer": {
+            "show": true,
+            "reducer": ["sum"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {}
+        }
+      }
+    ]
+  },
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource for striatica pipeline metrics",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0"},
+    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "table", "name": "Table", "version": ""},
+    {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""}
+  ]
+}

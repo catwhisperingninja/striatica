@@ -10,7 +10,7 @@ from pipeline.local_dim import (
 )
 
 
-def _make_sphere_data(n=500, ambient=50, intrinsic=3, seed=42):
+def _make_sphere_data(n=500, ambient=2304, intrinsic=3, seed=42):
     """Generate points near a sphere surface (known intrinsic dim ~ intrinsic-1)."""
     rng = np.random.default_rng(seed)
     pts = rng.standard_normal((n, intrinsic))

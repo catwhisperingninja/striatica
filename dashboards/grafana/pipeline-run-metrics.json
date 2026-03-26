@@ -1,0 +1,424 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "striatica-pipeline-run",
+    "title": "Striatica — Pipeline Run Metrics",
+    "description": "Real-time visibility into pipeline execution: step durations, UMAP convergence, GPU/memory usage, progress, and cost estimates.",
+    "tags": ["striatica", "pipeline", "performance", "gpu"],
+    "timezone": "browser",
+    "schemaVersion": 39,
+    "version": 1,
+    "refresh": "10s",
+    "time": {
+      "from": "now-2h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "model_id",
+          "type": "query",
+          "datasource": "${DS_PROMETHEUS}",
+          "query": "label_values(striatica_pipeline_run_info, model_id)",
+          "refresh": 2,
+          "multi": false,
+          "includeAll": false
+        },
+        {
+          "name": "run_id",
+          "type": "query",
+          "datasource": "${DS_PROMETHEUS}",
+          "query": "label_values(striatica_pipeline_run_info{model_id=~\"$model_id\"}, run_id)",
+          "refresh": 2,
+          "multi": false,
+          "includeAll": false,
+          "sort": 2
+        },
+        {
+          "name": "hourly_rate",
+          "type": "custom",
+          "query": "3.29,1.10,0.80,0.00",
+          "current": {"text": "3.29", "value": "3.29"},
+          "label": "GPU $/hr",
+          "description": "Hourly rate for cost estimation. A100=$3.29, 4090=$1.10, 4070STi=$0.80, Local=$0.00"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "title": "Total Wall Time",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_total_duration_seconds{model_id=~\"$model_id\", run_id=\"$run_id\"}",
+            "legendFormat": "Wall Time"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 600, "color": "yellow"},
+                {"value": 1800, "color": "orange"},
+                {"value": 3600, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Feature Count",
+        "type": "stat",
+        "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_feature_count{run_id=\"$run_id\"}",
+            "legendFormat": "features"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "none"
+        }
+      },
+      {
+        "title": "Current Step",
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 0, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_current_step_info{run_id=\"$run_id\"}",
+            "legendFormat": "{{step_name}}"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "background",
+          "textMode": "name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"fixedColor": "blue", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "Estimated Cost",
+        "description": "Wall time × hourly GPU rate. Change rate via dropdown.",
+        "type": "stat",
+        "gridPos": {"x": 14, "y": 0, "w": 5, "h": 4},
+        "targets": [
+          {
+            "expr": "(striatica_pipeline_total_duration_seconds{run_id=\"$run_id\"} / 3600) * $hourly_rate",
+            "legendFormat": "Est. Cost"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "decimals": 2,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "Pipeline Mode",
+        "type": "stat",
+        "gridPos": {"x": 19, "y": 0, "w": 5, "h": 4},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_run_info{run_id=\"$run_id\"}",
+            "legendFormat": "{{pipeline_mode}}"
+          }
+        ],
+        "options": {
+          "reduceOptions": {"calcs": ["lastNotNull"]},
+          "colorMode": "none",
+          "textMode": "name"
+        }
+      },
+      {
+        "title": "Step Durations",
+        "description": "Duration of each pipeline step. Color-coded: PCA (blue), UMAP (orange), HDBSCAN (green), VGT (purple), JSON (gray).",
+        "type": "barchart",
+        "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_step_duration_seconds{run_id=\"$run_id\"}",
+            "legendFormat": "{{step}}"
+          }
+        ],
+        "options": {
+          "orientation": "horizontal",
+          "showValue": "always",
+          "stacking": "none",
+          "barWidth": 0.7
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "color": {"mode": "palette-classic"}
+          },
+          "overrides": [
+            {"matcher": {"id": "byName", "options": "pca"}, "properties": [{"id": "color", "value": {"fixedColor": "#3274D9", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "umap"}, "properties": [{"id": "color", "value": {"fixedColor": "#FF9830", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "hdbscan"}, "properties": [{"id": "color", "value": {"fixedColor": "#73BF69", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "vgt"}, "properties": [{"id": "color", "value": {"fixedColor": "#B877D9", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "json_export"}, "properties": [{"id": "color", "value": {"fixedColor": "#8F8F8F", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "load_vectors"}, "properties": [{"id": "color", "value": {"fixedColor": "#F2495C", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "download_metadata"}, "properties": [{"id": "color", "value": {"fixedColor": "#FADE2A", "mode": "fixed"}}]}
+          ]
+        }
+      },
+      {
+        "title": "Step Timeline",
+        "description": "When each step started and ended. Visual Gantt chart of the pipeline.",
+        "type": "state-timeline",
+        "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_pipeline_step_active{run_id=\"$run_id\"}",
+            "legendFormat": "{{step}}"
+          }
+        ],
+        "options": {
+          "showValue": "auto",
+          "rowHeight": 0.8,
+          "mergeValues": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "mappings": [
+              {"type": "value", "options": {"0": {"text": "Idle", "color": "transparent"}}},
+              {"type": "value", "options": {"1": {"text": "Running", "color": "green"}}}
+            ]
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 12, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "UMAP Convergence Loss",
+        "description": "UMAP optimization loss per epoch. Flat = converged. Rising = problem. Helps determine if n_epochs is sufficient.",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 13, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_umap_loss{run_id=\"$run_id\"}",
+            "legendFormat": "Loss"
+          }
+        ],
+        "options": {
+          "tooltip": {"mode": "single"}
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 15,
+              "gradientMode": "scheme",
+              "pointSize": 1
+            },
+            "color": {"fixedColor": "#FF9830", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "UMAP Progress",
+        "description": "Epoch progress during UMAP optimization.",
+        "type": "gauge",
+        "gridPos": {"x": 12, "y": 13, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_umap_epoch_current{run_id=\"$run_id\"} / striatica_umap_epoch_total{run_id=\"$run_id\"}",
+            "legendFormat": "UMAP Progress"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 0.25, "color": "orange"},
+                {"value": 0.5, "color": "yellow"},
+                {"value": 0.75, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "VGT Progress",
+        "description": "Features processed / total features. This is the slow step.",
+        "type": "gauge",
+        "gridPos": {"x": 18, "y": 13, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_vgt_features_completed{run_id=\"$run_id\"} / striatica_pipeline_feature_count{run_id=\"$run_id\"}",
+            "legendFormat": "VGT Progress"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 0.25, "color": "orange"},
+                {"value": 0.5, "color": "yellow"},
+                {"value": 0.75, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "title": "",
+        "type": "row",
+        "gridPos": {"x": 0, "y": 21, "w": 24, "h": 1},
+        "collapsed": false
+      },
+      {
+        "title": "Memory Usage (RSS)",
+        "description": "Process resident memory over time.",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 22, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_process_memory_rss_bytes{run_id=\"$run_id\"}",
+            "legendFormat": "RSS"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 20
+            },
+            "color": {"fixedColor": "#73BF69", "mode": "fixed"}
+          }
+        }
+      },
+      {
+        "title": "GPU Memory Usage",
+        "description": "VRAM allocated vs total. Watch for OOM.",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 22, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_gpu_memory_used_bytes{run_id=\"$run_id\"}",
+            "legendFormat": "Used"
+          },
+          {
+            "expr": "striatica_gpu_memory_total_bytes{run_id=\"$run_id\"}",
+            "legendFormat": "Total"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 20
+            }
+          },
+          "overrides": [
+            {"matcher": {"id": "byName", "options": "Total"}, "properties": [{"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [10, 10]}}, {"id": "color", "value": {"fixedColor": "#8F8F8F", "mode": "fixed"}}]},
+            {"matcher": {"id": "byName", "options": "Used"}, "properties": [{"id": "color", "value": {"fixedColor": "#F2495C", "mode": "fixed"}}]}
+          ]
+        }
+      },
+      {
+        "title": "GPU Utilization",
+        "description": "GPU compute utilization percentage.",
+        "type": "timeseries",
+        "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "striatica_gpu_utilization_percent{run_id=\"$run_id\"}",
+            "legendFormat": "GPU %"
+          },
+          {
+            "expr": "striatica_gpu_memory_utilization_percent{run_id=\"$run_id\"}",
+            "legendFormat": "VRAM %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "custom": {
+              "drawStyle": "line",
+              "lineWidth": 2,
+              "fillOpacity": 15
+            }
+          }
+        }
+      }
+    ]
+  },
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource for striatica pipeline metrics",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {"type": "grafana", "id": "grafana", "name": "Grafana", "version": "10.0.0"},
+    {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"},
+    {"type": "panel", "id": "stat", "name": "Stat", "version": ""},
+    {"type": "panel", "id": "barchart", "name": "Bar chart", "version": ""},
+    {"type": "panel", "id": "state-timeline", "name": "State timeline", "version": ""},
+    {"type": "panel", "id": "timeseries", "name": "Time series", "version": ""},
+    {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""}
+  ]
+}
