@@ -71,10 +71,10 @@ git clone https://github.com/catwhisperingninja/striatica.git
 cd striatica
 
 # Build the container
-docker build -t striatica-pipeline .
+docker build -t striatica .
 
 # Run the GPT-2 Small demo
-docker run -t --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica -v $(pwd)/output:/app/output striatica \
   model --np-id gpt2-small/6-res-jb
 ```
 
@@ -213,9 +213,9 @@ model with Neuronpedia feature data available for processing:
 
 ```bash
 # Docker
-docker run -t --name striatica-discover --rm striatica-pipeline \
+docker run -t --name striatica-discover --rm striatica \
   discover --sae-types res
-docker run -t --name striatica-discover --rm striatica-pipeline \
+docker run -t --name striatica-discover --rm striatica \
   discover --families gpt2,gemma2,llama
 
 # Poetry
@@ -233,11 +233,11 @@ auto-resolves the SAELens release name, hook point, and S3 batch count:
 
 ```bash
 # Docker
-docker run -t --name striatica -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica -v $(pwd)/output:/app/output striatica \
   model --np-id gpt2-small/6-res-jb
 
 docker run -t --name striatica-gemma --gpus all \
-  -v $(pwd)/output:/app/output striatica-pipeline-gpu \
+  -v $(pwd)/output:/app/output striatica-gpu \
   model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
 
 # Poetry
@@ -275,7 +275,7 @@ poetry run striat model --transcoder gemma-2-2b/12/604 --device auto
 
 # Docker
 docker run -t --name striatica-gemma --gpus all \
-  -v $(pwd)/output:/app/output striatica-pipeline-gpu \
+  -v $(pwd)/output:/app/output striatica-gpu \
   model --transcoder gemma-2-2b/12/604 --device cuda
 
 # On a Vast.ai / cloud GPU instance (pip install, no Poetry)
@@ -303,7 +303,7 @@ Process multiple models sequentially with resume capability:
 
 ```bash
 # Docker
-docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica \
   batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb,gpt2-small/10-res-jb" \
   --continue-on-error
 
@@ -313,7 +313,7 @@ poetry run striat batch \
   --continue-on-error
 
 # Force reprocess even if output exists
-docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica \
   batch --np-ids "..." --force
 ```
 
@@ -376,8 +376,8 @@ Two Dockerfiles are provided: `Dockerfile` (CPU) and `Dockerfile.gpu` (NVIDIA
 GPU). Build whichever you need:
 
 ```bash
-docker build -t striatica-pipeline .                              # CPU
-docker build -f Dockerfile.gpu -t striatica-pipeline-gpu .        # GPU
+docker build -t striatica .                              # CPU
+docker build -f Dockerfile.gpu -t striatica-gpu .        # GPU
 ```
 
 All CLI subcommands (`model`, `discover`, `batch`) work in either container.
@@ -387,8 +387,9 @@ Mount a volume to `-v $(pwd)/output:/app/output` to get results out. Use
 ### Semantic labels
 
 Semantic labels (feature explanations) are redacted by default for models
-outside the public tier. Add `--include-semantics` to any `model` or `batch`
-command to include them. This works the same in Docker and Poetry.
+outside the public tier. Add `--include-semantics` to any `model` command to
+include them. This works the same in Docker and Poetry. (Batch support for
+`--include-semantics` is planned but not yet implemented.)
 
 Please read the [Responsible Use](#responsible-use-interpretability-safety) section before publishing
 semantic data for capable models.
@@ -436,7 +437,7 @@ To run on any remote server and view results locally:
 
 ```bash
 # On remote server (Docker or Poetry — either works)
-docker run -t --name striatica-remote -v $(pwd)/output:/app/output striatica-pipeline \
+docker run -t --name striatica-remote -v $(pwd)/output:/app/output striatica \
   model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
 
 # Copy output to your local machine
