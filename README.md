@@ -39,9 +39,9 @@ cascades through the entire embedding.
 
 **Poetry makes this worse.** Running `poetry lock` resolves the latest
 compatible versions from PyPI, which may include patch updates to the UMAP
-dependency chain. If `poetry lock` runs during a Docker build, in CI, or on a
-different machine than the original developer environment, the resolved versions
-will differ and the output will silently change. **The Dockerfiles bypass Poetry
+dependency chain. If `poetry lock` runs during a Docker build even with certain 
+trivial environmental differences, the output 
+will silently change. **The Dockerfiles bypass Poetry
 entirely and install exact pinned versions via pip** to eliminate this failure
 mode.
 
@@ -50,7 +50,7 @@ UMAP reproducibility chain (`numpy==2.4.2`, `scipy==1.17.1`,
 `scikit-learn==1.8.0`, `umap-learn==0.5.11`, `hdbscan==0.8.41`) and install
 them directly with pip — no lockfile resolution, no version drift.
 
-**If you must use Poetry locally:** Never run `poetry lock` unless you intend to
+**If you use Poetry locally:** Never run `poetry lock` unless you intend to
 regenerate all data. The committed `poetry.lock` pins the versions that produced
 the current data. If `poetry install` fails because `pyproject.toml` has
 dependencies not in the lockfile, the fix is to update the lockfile locally and
@@ -110,12 +110,12 @@ frontend. Open the localhost URL, and you're exploring.
 
 # Responsible Use: Interpretability Safety
 
-**This tool may identify features involved in AI safety behaviors.**
+**This tool may identify features involved in AI safety and alignment.**
 
 Striatica's pipeline generates semantic interpretations of individual features 
 and circuits — including features that participate in alignment, honesty, refusal, 
-and other safety-relevant behaviors. If these interpretations are published, 
-enter model training data, or reviewable by models themselves, theoretically they could be used to identify and circumvent safety 
+and other relevant behaviors. If these interpretations are published, 
+enter model training data, or reviewed by models themselves, theoretically they could be used to identify and circumvent safety 
 mechanisms in current and future AI systems.
 
 **What the pipeline does by default:**
@@ -139,15 +139,16 @@ please read the following before doing so.
   before publication (e.g., Anthropic, MIRI, ARC, Redwood Research, or your
   institution's AI safety team).
 - Consider whether your publication could enable targeted ablation of safety
-  circuits.
+  circuits, or how an adversarial evaluation might inform very different conclusions. 
 - Audit outputs and screenshots for exposed semantic data prior to sharing.
 - Geometry, topology, and circuit structure without semantic labels appear
   generally safe to publish.
 
-At this time, my understanding is that it is wise to consider this dual-use research in the same category as biosecurity and nuclear
-physics. I have been reaching out to experts and various groups since I made this repo public, seeking validation of the findings and assessment of the risk, with very little success. I'm studied enough to suspect there is a strong likelihood that some amount of data will require strict security controls. I'd rather be safe than sorry.
+At this time, my understanding is to consider this dual-use research in the same category as biosecurity and nuclear
+physics. I have been reaching out to experts and various groups since I made this repo public, seeking validation of the findings and risk assessments.
 
-Not everything has been scientifically validated, so there is always the chance that I could be overstating things. Naturally, I am open to feedback as things progress. Please open an issue or tag me in the discussion threads.
+Not everything has been scientifically validated, so there is always the chance that I could be overstating things. Naturally, I am open to feedback as things progress. 
+Please open an issue or tag me in the discussion threads.
 
 ---
 
@@ -182,7 +183,7 @@ has been implemented. Please do not expose it to the public internet as-is.
 5. Local dimension estimation (Participation Ratio + VGT growth curves)
 6. Assembles JSON for the frontend (~19MB for 24,576 features)
 7. Asks if you want to generate the 10 default circuits (5 co-activation + 5
-   similarity)
+     similarity) (circuits not generating correctly. WIP.)
 8. Starts the Vite dev server on the first available port from 5173
 
 Compute time is 5–10 minutes on a recent MacBook Pro or equivalent. The data
@@ -450,7 +451,7 @@ cd frontend && pnpm dev
 
 ---
 
-# Circuits
+# Circuits (WIP)
 
 Generate circuit data to see how features connect during specific computations.
 
