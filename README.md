@@ -110,7 +110,7 @@ frontend. Open the localhost URL, and you're exploring.
 
 # Responsible Use: Interpretability Safety
 
-**This tool may likely identify features involved in AI safety behaviors.**
+**This tool may identify features involved in AI safety behaviors.**
 
 Striatica's pipeline generates semantic interpretations of individual features 
 and circuits — including features that participate in alignment, honesty, refusal, 
