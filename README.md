@@ -6,7 +6,7 @@
 
 A geometric atlas for machine intelligence.
 
-> **⚠ Work in Progress (v0.3.0)** — striatica is under active development. The
+> **⚠️Work in Progress (v0.3.0)** — striatica is under active development. The
 > geometric pipeline is functional and producing real data, but circuit
 > integration is being rebuilt with Neuronpedia Circuit Tracer transcoders
 > (replacing the Jaccard co-activation heuristic). Expect rough edges, evolving
