@@ -5,7 +5,7 @@
 # Checks out triage-debug branch (has transcoder loading code + new tests).
 set -euo pipefail
 
-BRANCH="triage-debug"
+BRANCH="main"
 VERSION_LOG="/root/striatica-installed-versions.txt"
 
 # HuggingFace token — Gemma models are GATED and require authentication.

@@ -257,7 +257,11 @@ def cmd_model(args: argparse.Namespace) -> None:
         info("Semantics", "included", emoji="📖")
     print()
 
-    _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact)
+    # Resolve pca_dim from CLI
+    pca_dim_arg = getattr(args, "pca_dim", "auto")
+    pca_dim = pca_dim_arg if pca_dim_arg == "auto" else int(pca_dim_arg)
+
+    _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact, pca_dim=pca_dim)
 
     # Output path depends on config type
     if isinstance(cfg, TranscoderConfig):
@@ -436,7 +440,9 @@ def cmd_batch(args: argparse.Namespace) -> None:
             redact = not public
 
             t_start = time.time()
-            _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact)
+            pca_dim_arg = getattr(args, "pca_dim", "auto")
+            batch_pca_dim = pca_dim_arg if pca_dim_arg == "auto" else int(pca_dim_arg)
+            _run_process_pipeline(cfg, DATA_DIR, device=device, redact_semantics=redact, pca_dim=batch_pca_dim)
             elapsed = time.time() - t_start
 
             results.append((np_id, "success", elapsed))
@@ -470,7 +476,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
             detail(f"{np_id}: {err}")
 
 
-def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_semantics: bool = False) -> None:
+def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_semantics: bool = False, pca_dim: int | str = "auto") -> None:
     """Run the full data pipeline for a given SAEConfig or TranscoderConfig.
 
     Dispatches vector loading and metadata steps based on config type.
@@ -554,7 +560,7 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     # Step 3: Dimensionality reduction
     t0 = time.time()
     step_header("reduce", "Step 3/6 · PCA + UMAP → 3D")
-    coords, pca_variance = reduce_to_3d(vectors, pca_dim=50, return_pca_variance=True)
+    coords, pca_variance = reduce_to_3d(vectors, pca_dim=pca_dim, return_pca_variance=True)
     step_done(time.time() - t0)
 
     # Step 4: Clustering
@@ -801,6 +807,11 @@ def main() -> None:
     p_model.add_argument("--device", default="auto", help="Torch device: auto, cuda, mps, or cpu (default: auto)")
     p_model.add_argument("--json-export", action="store_true", help="Export JSON only, skip frontend launch instructions")
     p_model.add_argument(
+        "--pca-dim", default="auto",
+        help="PCA intermediate dimensions before UMAP. 'auto' selects based on input "
+             "dimensionality: min(d//4, 300). Explicit int overrides (default: auto).",
+    )
+    p_model.add_argument(
         "--include-semantics", action="store_true", default=False,
         help="Include semantic labels for non-public-tier models. "
              "WARNING: Semantic labels for frontier models may contain safety-relevant "
@@ -817,6 +828,11 @@ def main() -> None:
     p_batch.add_argument("--features-per-batch", type=int, default=1024, help="Features per batch (default: 1024)")
     p_batch.add_argument("--force", action="store_true", help="Reprocess models even if output exists")
     p_batch.add_argument("--continue-on-error", action="store_true", help="Continue to next model on failure")
+    p_batch.add_argument(
+        "--pca-dim", default="auto",
+        help="PCA intermediate dimensions before UMAP. 'auto' selects based on input "
+             "dimensionality: min(d//4, 300). Explicit int overrides (default: auto).",
+    )
     p_batch.set_defaults(func=cmd_batch)
 
     # ── validate ──

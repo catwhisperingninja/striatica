@@ -91,6 +91,7 @@ class TestModelArgparse:
         p_model.add_argument("--features-per-batch", type=int, default=1024)
         p_model.add_argument("--device", default="auto")
         p_model.add_argument("--json-export", action="store_true")
+        p_model.add_argument("--pca-dim", default="auto")
         p_model.add_argument("--include-semantics", action="store_true", default=False)
         return parser.parse_args(base)
 
@@ -131,6 +132,21 @@ class TestModelArgparse:
         assert args.include_semantics is True
         assert args.json_export is True
 
+    def test_pca_dim_default_is_auto(self):
+        """--pca-dim defaults to 'auto' for adaptive selection."""
+        args = self._parse_model_args()
+        assert args.pca_dim == "auto"
+
+    def test_pca_dim_explicit_int(self):
+        """--pca-dim accepts an explicit integer value."""
+        args = self._parse_model_args(["--pca-dim", "300"])
+        assert args.pca_dim == "300"  # argparse returns string, caller converts to int
+
+    def test_pca_dim_explicit_50(self):
+        """--pca-dim=50 should be parseable for backwards compat."""
+        args = self._parse_model_args(["--pca-dim", "50"])
+        assert args.pca_dim == "50"
+
 
 class TestTranscoderCLI:
     """Tests for transcoder-specific CLI behavior."""
@@ -150,6 +166,7 @@ class TestTranscoderCLI:
             device="cpu",
             include_semantics=False,
             json_export=True,
+            pca_dim="auto",
         )
 
     def test_cmd_model_uses_transcoder_resolution_and_pipeline(self, monkeypatch):
@@ -162,8 +179,8 @@ class TestTranscoderCLI:
         monkeypatch.setattr("pipeline.cli._resolve_transcoder", lambda _args: cfg)
         monkeypatch.setattr(
             "pipeline.cli._run_process_pipeline",
-            lambda c, data_dir, device, redact_semantics: calls.update(
-                cfg=c, data_dir=data_dir, device=device, redact_semantics=redact_semantics
+            lambda c, data_dir, device, redact_semantics, pca_dim="auto": calls.update(
+                cfg=c, data_dir=data_dir, device=device, redact_semantics=redact_semantics, pca_dim=pca_dim
             ),
         )
 
@@ -211,7 +228,7 @@ class TestTranscoderCLI:
             kwargs,
             __import__("numpy").ones((3, 2)),
         )[2])
-        monkeypatch.setattr("pipeline.reduce.reduce_to_3d", lambda _v, pca_dim: __import__("numpy").zeros((3, 3)))
+        monkeypatch.setattr("pipeline.reduce.reduce_to_3d", lambda _v, **kwargs: (__import__("numpy").zeros((3, 3)), 0.5) if kwargs.get("return_pca_variance") else __import__("numpy").zeros((3, 3)))
         monkeypatch.setattr("pipeline.cluster.cluster_points", lambda _coords: __import__("numpy").array([0, 0, 1]))
         monkeypatch.setattr("pipeline.local_dim.estimate_local_dim", lambda _v, method: __import__("numpy").array([1.0, 1.1, 1.2]))
         monkeypatch.setattr(
