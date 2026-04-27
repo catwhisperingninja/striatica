@@ -43,12 +43,17 @@ export default function Canvas3D() {
       .then(setDataset)
       .catch((e: Error) => setError(e.message))
 
-    loadCircuitManifest()
-      .then((manifest) => {
-        setCircuitManifest(manifest)
-        buildCircuitMembership()
-      })
-      .catch((e: Error) => console.warn('Circuit manifest load failed:', e.message))
+    // Only load GPT-2 circuits when viewing GPT-2 data — circuit feature indices
+    // are model-specific and would display wrong labels on other datasets
+    const isGpt2 = targetFile.startsWith('gpt2-small')
+    if (isGpt2) {
+      loadCircuitManifest()
+        .then((manifest) => {
+          setCircuitManifest(manifest)
+          buildCircuitMembership()
+        })
+        .catch((e: Error) => console.warn('Circuit manifest load failed:', e.message))
+    }
   }, [setDataset, setLoading, setError, setCircuitManifest, buildCircuitMembership, setAvailableDatasets])
 
   return (

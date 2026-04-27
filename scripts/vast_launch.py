@@ -217,6 +217,25 @@ def copy_data(src: str, dst: str) -> dict:
     return api_call("commands/copy_direct/", method="PUT", data=payload)
 
 
+def list_templates() -> list[dict]:
+    """List saved templates."""
+    # Vast API template listing — endpoint may vary by API version
+    try:
+        result = api_call("template/own/")
+    except Exception:
+        try:
+            result = api_call("templates/")
+        except Exception:
+            return []
+    if isinstance(result, dict):
+        for key in ["templates", "results"]:
+            if key in result:
+                return result[key]
+    if isinstance(result, list):
+        return result
+    return []
+
+
 def create_template(
     name: str,
     image: str = DEFAULT_IMAGE,
@@ -238,6 +257,28 @@ def create_template(
     if env:
         payload["env"] = env
     return api_call("template/", method="POST", data=payload)
+
+
+def launch_from_template(
+    template_id: int,
+    offer_id: int,
+    disk_gb: float = DEFAULT_DISK_GB,
+    label: str = "striatica-gpu",
+) -> dict:
+    """Launch an instance using a saved template.
+
+    Args:
+        template_id: Template ID (from --templates list)
+        offer_id: Offer/machine ID to launch on (from --list)
+        disk_gb: Disk size override
+        label: Instance label
+    """
+    payload: dict = {
+        "template_id": template_id,
+        "disk": disk_gb,
+        "label": label,
+    }
+    return api_call(f"asks/{offer_id}/", method="PUT", data=payload)
 
 
 def print_volumes(volumes: list[dict]):
@@ -292,16 +333,18 @@ def print_instances(instances: list[dict]):
         return
 
     print(f"\n  Running Instances ({len(instances)}):")
-    print(f"  {'ID':<12} {'GPU':<22} {'Status':<12} {'$/hr':<8} {'SSH'}")
-    print(f"  {'-'*12} {'-'*22} {'-'*12} {'-'*8} {'-'*40}")
+    print(f"  {'Instance ID':<12} {'Machine ID':<12} {'GPU':<22} {'Status':<12} {'$/hr':<8} {'SSH'}")
+    print(f"  {'-'*12} {'-'*12} {'-'*22} {'-'*12} {'-'*8} {'-'*40}")
     for inst in instances:
         ssh_host = inst.get("ssh_host", "")
         ssh_port = inst.get("ssh_port", "")
         ssh_str = f"ssh -p {ssh_port} root@{ssh_host}" if ssh_host else "pending..."
         gpu_name = inst.get("gpu_name", "?")
         num_gpus = inst.get("num_gpus", 1)
+        machine_id = inst.get("machine_id", "?")
         print(
             f"  {inst.get('id', '?'):<12} "
+            f"{machine_id:<12} "
             f"{f'{num_gpus}x {gpu_name}':<22} "
             f"{(inst.get('actual_status') or inst.get('status_msg') or '?'):<12} "
             f"${inst.get('dph_total', 0):<7.2f} "
@@ -365,10 +408,17 @@ def main():
         "--copy", nargs=2, metavar=("SRC", "DST"),
         help="Copy data: C.<id>:/path/ V.<id>:/path/",
     )
-    # Template command
+    # Template commands
+    parser.add_argument(
+        "--templates", action="store_true", help="List saved templates"
+    )
     parser.add_argument(
         "--create-template", type=str, default=None, metavar="NAME",
         help="Create a reusable template with given name",
+    )
+    parser.add_argument(
+        "--launch-template", type=int, default=None, metavar="TEMPLATE_ID",
+        help="Launch an instance from a saved template (requires --offer for the machine/offer ID)",
     )
     parser.add_argument(
         "--onstart", type=str, default="",
@@ -379,6 +429,7 @@ def main():
     has_action = any([
         args.list, args.launch, args.instances, args.volumes,
         args.create_volume, args.copy, args.create_template,
+        args.templates, args.launch_template,
     ])
     if not has_action:
         args.list = True
@@ -422,6 +473,35 @@ def main():
         print(f"\n  Copying: {src} -> {dst}")
         result = copy_data(src, dst)
         print(f"  Result: {json.dumps(result, indent=2)}")
+
+    if args.templates:
+        print("\n=== Saved Templates ===")
+        templates = list_templates()
+        if isinstance(templates, list) and templates:
+            print(f"\n  Templates ({len(templates)}):")
+            print(f"  {'ID':<10} {'Name':<30} {'Image':<40}")
+            print(f"  {'-'*10} {'-'*30} {'-'*40}")
+            for t in templates:
+                print(f"  {t.get('id', '?'):<10} {t.get('name', '?'):<30} {t.get('image', '?'):<40}")
+        elif isinstance(templates, list):
+            print("\n  No saved templates.\n")
+        else:
+            print(f"  Response: {json.dumps(templates, indent=2)[:500]}")
+
+    if args.launch_template:
+        if not args.offer:
+            print("ERROR: --launch-template requires --offer <offer_id>")
+            print("  Use --list to find available offers")
+            sys.exit(1)
+        print(f"\n  Launching template {args.launch_template} on offer {args.offer}...")
+        result = launch_from_template(
+            template_id=args.launch_template,
+            offer_id=args.offer,
+            disk_gb=args.disk,
+            label=args.label,
+        )
+        print(f"  Result: {json.dumps(result, indent=2)}")
+        print(f"\n  Use --instances to check status and get SSH details.")
 
     if args.create_template:
         print(f"\n  Creating template '{args.create_template}'...")

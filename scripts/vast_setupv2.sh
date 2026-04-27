@@ -2,7 +2,7 @@
 # vast_setupv2.sh — Vast.ai A100 instance bootstrap for striatica pipeline
 # Run directly on the instance: bash vast_setupv2.sh
 # Does NOT use Docker or Poetry. Pip-installs deps directly for CUDA compat.
-# Checks out triage-debug branch (has transcoder loading code + new tests).
+# Checks out main branch (has transcoder loading code + new tests).
 set -euo pipefail
 
 BRANCH="main"
