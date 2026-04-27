@@ -2,7 +2,6 @@
 """Extract decoder weight vectors from SAELens pretrained SAEs and Gemmascope transcoders."""
 
 import numpy as np
-from huggingface_hub import hf_hub_download
 
 
 def load_decoder_vectors(
@@ -60,6 +59,8 @@ def load_transcoder_vectors(
         ValueError: If weights contain non-finite values or L0 variant not found.
         KeyError: If npz file has unexpected key names.
     """
+    from huggingface_hub import hf_hub_download
+
     # Gemmascope transcoders use params.npz (NumPy), NOT safetensors
     filename = f"layer_{layer}/{width}/average_l0_{l0_variant}/params.npz"
 

@@ -112,3 +112,33 @@ def test_default_n_jobs():
     n = _default_n_jobs()
     assert isinstance(n, int)
     assert n >= 1
+
+
+# ── Edge cases: degenerate inputs ────────────────────────────────────────
+
+
+def test_vgt_no_nan_on_near_identical_distances():
+    """VGT must not produce NaN when neighbor distances are nearly identical.
+
+    This triggers the numpy RuntimeWarning 'invalid value encountered in multiply'
+    inside np.geomspace when max_r / min_r ≈ 1.0. The fix guards against this
+    by returning dim=0 for degenerate radius ranges.
+    """
+    from pipeline.local_dim import _vgt_single
+
+    # Simulate distances that are all nearly the same (degenerate case)
+    d_i = np.array([1.0, 1.0, 1.0 + 1e-15, 1.0 + 1e-15, 1.0 + 2e-15])
+    dim, curve = _vgt_single(d_i, n_radii=10, return_curve=True)
+
+    assert np.isfinite(dim)
+    assert dim == 0.0  # degenerate input should return 0, not NaN
+
+
+def test_vgt_no_nan_on_full_dataset():
+    """VGT output must contain zero NaN values on any input."""
+    import warnings
+    data = _make_sphere_data(n=200, ambient=50)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        dims = estimate_local_dim_vgt(data, n_radii=10, max_k=50, n_jobs=1)
+    assert np.all(np.isfinite(dims)), f"NaN found at indices: {np.where(~np.isfinite(dims))}"

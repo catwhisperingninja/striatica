@@ -216,6 +216,7 @@ class TestTranscoderCLI:
             _resolve_transcoder(args)
         assert exc.value.code == 1
 
+    @pytest.mark.slow
     def test_run_process_pipeline_dispatches_transcoder_loader(self, monkeypatch, tmp_path):
         """_run_process_pipeline should call load_transcoder_vectors for TranscoderConfig."""
         cfg = TranscoderConfig(model_id="gemma-2-2b", layer=12, l0_variant=604)

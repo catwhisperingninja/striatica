@@ -139,6 +139,11 @@ def _vgt_single(d_i: np.ndarray, n_radii: int, return_curve: bool) -> tuple[floa
     if max_r <= min_r or min_r <= 0:
         return 0.0, empty_curve if return_curve else None
 
+    # Guard against near-identical min/max radii — geomspace produces NaN
+    # when the ratio is too close to 1.0 (step computation underflows)
+    if max_r / min_r < 1.0 + 1e-10:
+        return 0.0, empty_curve if return_curve else None
+
     radii = np.geomspace(min_r, max_r, n_radii)
     log_r = np.log(radii)
     log_v = np.array([np.log(max(np.searchsorted(d_i, r), 1)) for r in radii])
