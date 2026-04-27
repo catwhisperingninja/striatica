@@ -501,12 +501,45 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
     explanations_path = None
 
     if is_transcoder:
-        # Transcoder mode: vectors from HuggingFace npz, no Neuronpedia metadata
+        # Transcoder mode: vectors from HuggingFace npz
         from pipeline.vectors import load_transcoder_vectors
+        from pipeline.download import download_features, download_explanations
+        from pipeline.discovery import _probe_s3_batch_count
 
-        step_header("skip", "Step 1/6 · No Neuronpedia metadata for transcoders")
-        detail("Transcoder features don't have Neuronpedia explanations yet")
-        step_done(0)
+        # Construct Neuronpedia layer ID for transcoder explanations
+        # Format: {layer}-gemmascope-transcoder-{width_suffix}
+        # e.g., "12-gemmascope-transcoder-16k" from layer=12, width="width_16k"
+        width_suffix = cfg.width.replace("width_", "")  # "width_16k" -> "16k"
+        np_layer = f"{cfg.layer}-gemmascope-transcoder-{width_suffix}"
+        np_model_id = cfg.model_id  # e.g., "gemma-2-2b"
+
+        # Probe S3 for available batches
+        t0 = time.time()
+        step_header("download", "Step 1/6 · Downloading transcoder explanations")
+        detail(f"Neuronpedia ID: {np_model_id}/{np_layer}")
+
+        num_batches = _probe_s3_batch_count(np_model_id, np_layer)
+        if num_batches and num_batches > 0:
+            batch_indices = list(range(num_batches))
+            detail(f"Found {num_batches} batches on Neuronpedia S3")
+
+            features_path = data_dir / f"{np_model_id}_{np_layer}_features.jsonl"
+            if not features_path.exists():
+                download_features(np_model_id, np_layer, batch_indices=batch_indices, output_path=features_path)
+            else:
+                detail(f"Cached: {features_path.name}")
+
+            if not redact_semantics:
+                explanations_path = data_dir / f"{np_model_id}_{np_layer}_explanations.jsonl"
+                if not explanations_path.exists():
+                    download_explanations(np_model_id, np_layer, batch_indices=batch_indices, output_path=explanations_path)
+                else:
+                    detail(f"Cached: {explanations_path.name}")
+            else:
+                detail("Semantic labels REDACTED (non-public-tier model)")
+        else:
+            detail("No Neuronpedia data found for this transcoder")
+        step_done(time.time() - t0)
 
         t0 = time.time()
         step_header("vectors", "Step 2/6 · Loading transcoder decoder vectors")

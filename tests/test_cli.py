@@ -241,6 +241,8 @@ class TestTranscoderCLI:
         # Skip validation — this test verifies dispatch, not validation
         class _FakeReport:
             passed = True
+            has_warnings = False
+            checks = []
             def print_scorecard(self): pass
         monkeypatch.setattr("pipeline.validate.validate_level1_arrays", lambda *a, **kw: _FakeReport())
         monkeypatch.setattr("pipeline.validate.validate_level2", lambda *a, **kw: _FakeReport())

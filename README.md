@@ -4,14 +4,9 @@
 > **Paper:** _Striatica: A Geometric Atlas for Machine Intelligence_ —
 > [Zenodo](https://doi.org/10.5281/zenodo.18848240)
 
-A geometric atlas for machine intelligence.
-
-> **⚠️Work in Progress (v0.3.0)** — striatica is under active development. The
-> geometric pipeline is functional and producing real data, but circuit
-> integration is being rebuilt with Neuronpedia Circuit Tracer transcoders
-> (replacing the Jaccard co-activation heuristic). Expect rough edges, evolving
-> APIs, and data formats that may change between versions. Contributions and
-> feedback are very welcome.
+A geometric atlas for machine intelligence — 3D visualization of neural network
+interpretability features from sparse autoencoder and transcoder decoder weight
+geometry.
 
 <img width="3200" height="1200" alt="striatica-banner_v3_sat" src="https://github.com/user-attachments/assets/1ac347c6-67bc-4346-8227-1bc84ac20bbe" />
 
@@ -23,140 +18,253 @@ _Example view of a feature, a circuit, and the local dimension heatmap display._
 
 ---
 
-# UMAP Reproducibility — Why Docker Matters
+# Semantic Labels and Dual-Use Research
 
-**UMAP output is not reproducible across different library versions**, even with
-the same `random_state=42`. A single patch-level bump to numpy, scipy,
-scikit-learn, umap-learn, or any of their transitive dependencies (numba,
-pynndescent) will silently produce **completely different** 3D feature positions.
-Features will map to the wrong points in space, clusters will change, and
-visualizations will be meaningless.
+Semantic labels (feature explanations, activation descriptions, interpretability
+annotations) are dual-use research material in the same category as biosecurity
+and nuclear physics research. They map human-readable meanings to individual
+computational features inside neural networks, including features involved in
+alignment, honesty, refusal, and safety behaviors.
 
-This is not a striatica bug — it's how UMAP works. The algorithm depends on
-approximate nearest-neighbor graphs, and even minor floating-point differences
-from different library builds cause the graph construction to diverge, which
-cascades through the entire embedding.
+**The pipeline redacts semantic labels by default.** For small, well-studied
+models (GPT-2 Small, Pythia-70M) whose safety circuits are already public
+knowledge, labels are included. For all other models, the output contains
+geometry only — positions, clusters, local dimensions, and activation statistics.
+The `--include-semantics` flag overrides this for authorized research.
 
-**Poetry makes this worse.** Running `poetry lock` resolves the latest
-compatible versions from PyPI, which may include patch updates to the UMAP
-dependency chain. If `poetry lock` runs during a Docker build even with certain 
-trivial environmental differences, the output 
-will silently change. **The Dockerfiles bypass Poetry
-entirely and install exact pinned versions via pip** to eliminate this failure
-mode.
+**Handling requirements:**
 
-**The safe path:** Use Docker. The Dockerfiles pin exact versions of the entire
-UMAP reproducibility chain (`numpy==2.4.2`, `scipy==1.17.1`,
-`scikit-learn==1.8.0`, `umap-learn==0.5.11`, `hdbscan==0.8.41`) and install
-them directly with pip — no lockfile resolution, no version drift.
+- Semantic labels must never be committed to version control, included in Docker
+  images, logged to stdout, or written to files that could be shared.
+- Geometry and circuit structure become associatable with semantic labels once
+  feature-circuit mappings exist. Treat geometric data from capable models as
+  potentially sensitive material that could enable reverse engineering of safety
+  mechanisms.
+- Audit all outputs and screenshots for exposed semantic data before sharing.
+- If your research involves features related to alignment, honesty, refusal, or
+  safety behaviors, consult with an AI safety research group before publication
+  (e.g., Anthropic, MIRI, ARC, Redwood Research, or your institution's AI safety
+  team).
 
-**If you use Poetry locally:** Never run `poetry lock` unless you intend to
-regenerate all data. The committed `poetry.lock` pins the versions that produced
-the current data. If `poetry install` fails because `pyproject.toml` has
-dependencies not in the lockfile, the fix is to update the lockfile locally and
-commit it — not to auto-lock in builds. After any lockfile update, all data must
-be regenerated and visually verified.
+Geometry, topology, and circuit structure without semantic labels are generally
+safe to publish for well-studied models. For frontier models, apply the same
+judgment you would to any dual-use research output.
 
 ---
 
-# Quick Start
+# Processing a Transcoder
 
-### Docker (strongly recommended)
-
-No Python, no Poetry, no dependency headaches. Just Docker. Exact reproducibility
-of UMAP output guaranteed by pinned dependency versions.
+striatica processes Gemmascope transcoders from Google's
+[gemma-scope](https://huggingface.co/google/gemma-scope-2b-pt-transcoders)
+collection. Transcoders map between transformer layers and produce decoder
+vectors in a higher-dimensional space (2304-D for Gemma 2 2B vs 768-D for
+GPT-2 Small).
 
 ```bash
-git clone https://github.com/catwhisperingninja/striatica.git
-cd striatica
+# Docker (GPU)
+docker build -f Dockerfile.gpu -t striatica-gpu .
+docker run -t --gpus all -v $(pwd)/output:/app/output striatica-gpu \
+  model --transcoder gemma-2-2b/12/604 --device cuda
 
-# Build the container
+# On a cloud GPU instance (Vast.ai, Lambda — pip install, no Docker)
+python -m pipeline model --transcoder gemma-2-2b/12/604 --device cuda --json-export
+```
+
+The `--transcoder` flag takes a `model/layer/l0` spec. The L0 value selects the
+sparsity variant — lower L0 means sparser activations. Available variants for
+Gemma 2 2B layer 12 width_16k: 6, 10, 18, 32, 60, 111, 204, 359, 604, 955.
+
+Transcoder weights are downloaded from HuggingFace (public, CC-BY-4.0, no auth
+required).
+
+### What the pipeline produces
+
+1. Loads transcoder decoder weight vectors from HuggingFace
+2. PCA (adaptive: `min(d/4, 300)` components — 300 for 2304-D transcoders)
+3. UMAP (PCA output to 3D)
+4. HDBSCAN clustering
+5. Local dimension estimation (Participation Ratio + VGT growth curves)
+6. L1 structural validation (hard gate — pipeline aborts on failure)
+7. L2 embedding quality scorecard (trustworthiness, neighborhood overlap)
+8. Output JSON with positions, clusters, local dimensions, activation stats
+
+### Transcoder CLI flags
+
+| Flag                 | Description                      | Default                                |
+| -------------------- | -------------------------------- | -------------------------------------- |
+| `--transcoder`       | Transcoder spec: `model/layer/l0`| —                                      |
+| `--transcoder-repo`  | HuggingFace repo ID             | `google/gemma-scope-2b-pt-transcoders` |
+| `--transcoder-width` | Width variant                    | `width_16k`                            |
+| `--pca-dim`          | PCA components (`auto` or int)  | `auto`                                 |
+| `--device`           | `auto`, `cuda`, `mps`, `cpu`    | `auto`                                 |
+| `--json-export`      | Export JSON only                 | off                                    |
+| `--include-semantics` | Include semantic labels          | off (redacted)                         |
+
+---
+
+# Processing an SAE Model
+
+striatica also processes any SAE dictionary available through
+[SAELens](https://github.com/jbloom/SAELens). The Neuronpedia ID is the
+simplest path — the CLI auto-resolves the SAELens release name, hook point, and
+S3 batch count.
+
+```bash
+# Docker (CPU — GPT-2 Small doesn't need a GPU)
 docker build -t striatica .
-
-# Run the GPT-2 Small demo
-docker run -t --name striatica -v $(pwd)/output:/app/output striatica \
+docker run -t -v $(pwd)/output:/app/output striatica \
   model --np-id gpt2-small/6-res-jb
+
+# Docker (GPU — larger models)
+docker run -t --gpus all -v $(pwd)/output:/app/output striatica-gpu \
+  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
 ```
 
-The container image is built for `amd64` and `arm64` (Intel/AMD and Apple
-Silicon both work). If you're on something exotic, build from the Dockerfile and
-it should just work.
-
-### Poetry (for development or if you want the interactive frontend)
-
-> **⚠ Read the [UMAP Reproducibility](#umap-reproducibility--why-docker-matters)
-> section first.** Poetry's dependency resolution can silently change UMAP output.
-> Docker is the only guaranteed-reproducible path. Use Poetry only if you need the
-> interactive frontend or are actively developing the pipeline, and **never run
-> `poetry lock` unless you intend to regenerate all data.**
-
-You need Python 3.12+, [Poetry 2.x](https://python-poetry.org/), and Node.js
-18+.
+### Discover available models
 
 ```bash
-git clone https://github.com/catwhisperingninja/striatica.git
-cd striatica
-
-# Install with ML dependencies (~2GB first run: PyTorch, SAELens, TransformerLens)
-poetry install --extras ml
-
-# Run the GPT-2 Small demo — generates data, circuits, launches the frontend
-poetry run striat demo
+docker run -t --rm striatica discover --sae-types res
+docker run -t --rm striatica discover --families gpt2,gemma2,llama
 ```
 
-`striat demo` walks you through everything: builds the dataset if it doesn't
-exist, optionally generates circuits, finds an open port, and starts the
-frontend. Open the localhost URL, and you're exploring.
+This queries the SAELens pretrained registry — no hardcoded model lists.
 
-# Responsible Use: Interpretability Safety
+### Batch processing
 
-**This tool may identify features involved in AI safety and alignment.**
+```bash
+docker run -t -v $(pwd)/output:/app/output striatica \
+  batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb" \
+  --continue-on-error
+```
 
-Striatica's pipeline generates semantic interpretations of individual features 
-and circuits — including features that participate in alignment, honesty, refusal, 
-and other relevant behaviors. If these interpretations are published, 
-enter model training data, or reviewed by models themselves, theoretically they could be used to identify and circumvent safety 
-mechanisms in current and future AI systems.
+### Full CLI reference
 
-**What the pipeline does by default:**
+| Flag                   | Description                                          | Default                                |
+| ---------------------- | ---------------------------------------------------- | -------------------------------------- |
+| `--np-id`              | Neuronpedia ID (auto-resolves everything)            | —                                      |
+| `--model`              | Model ID (explicit mode)                             | —                                      |
+| `--layer`              | Layer identifier (explicit mode)                     | —                                      |
+| `--sae-release`        | SAELens release name (explicit mode)                 | —                                      |
+| `--sae-hook`           | SAELens hook point (explicit mode)                   | —                                      |
+| `--transcoder`         | Transcoder spec: `model/layer/l0`                    | —                                      |
+| `--transcoder-repo`    | HuggingFace repo for transcoder weights              | `google/gemma-scope-2b-pt-transcoders` |
+| `--transcoder-width`   | Width variant directory                              | `width_16k`                            |
+| `--pca-dim`            | PCA intermediate dimensions (`auto` or explicit int) | `auto`                                 |
+| `--num-batches`        | S3 batch count (auto-probed with `--np-id`)          | 24                                     |
+| `--features-per-batch` | Features per S3 batch                                | 1024                                   |
+| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu`           | `auto`                                 |
+| `--json-export`        | Export JSON only, skip frontend launch instructions  | off                                    |
+| `--include-semantics`  | Include semantic labels for non-public-tier models   | off                                    |
 
-For small, well-studied models (GPT-2 Small, Pythia-70M), semantic labels are
-included in the output. These models' safety circuits are either non-existent or
-already public knowledge.
+### Hardware guidance
 
-For all other models, semantic labels are **redacted by default**. The pipeline
-produces geometry, topology, clustering, and circuit structure (all
-scientifically useful) without the interpretation layer that maps features to
-human-readable meanings. This can be overridden with `--include-semantics`, but
-please read the following before doing so.
+| Model              | Features | RAM   | Time (approx) | GPU                  |
+| ------------------ | -------- | ----- | ------------- | -------------------- |
+| GPT-2 Small (demo) | 24,576   | 16GB  | 5-10 min      | not needed           |
+| Gemma 2B (16K)     | 16,384   | 16GB  | 10-20 min     | recommended          |
+| Gemma 2B (65K)     | 65,536   | 32GB  | 30-60 min     | recommended          |
+| Llama 3.1 8B (32K) | 32,768   | 32GB  | 30-60 min     | strongly recommended |
 
-**If you plan to publish research using striatica:**
-
-- Do not publish complete semantic mappings of safety-relevant features for
-  capable models.
-- If your findings involve features related to alignment, honesty, refusal,
-  ethics, or similar safety/alignment behaviors, consult with an AI safety research group
-  before publication (e.g., Anthropic, MIRI, ARC, Redwood Research, or your
-  institution's AI safety team).
-- Consider whether your publication could enable targeted ablation of safety
-  circuits, or how an adversarial evaluation might inform very different conclusions. 
-- Audit outputs and screenshots for exposed semantic data prior to sharing.
-- Geometry, topology, and circuit structure without semantic labels appear
-  generally safe to publish.
-
-At this time, my understanding is to consider this dual-use research in the same category as biosecurity and nuclear
-physics. I have been reaching out to experts and various groups since I made this repo public, seeking validation of the findings and risk assessments.
-
-Not everything has been scientifically validated, so there is always the chance that I could be overstating things. Naturally, I am open to feedback as things progress. 
-Please open an issue or tag me in the discussion threads.
+VGT growth curve computation is the bottleneck — it's O(n^2) on the feature
+count.
 
 ---
 
-# Security Notice
+# Docker
 
-striatica is a localhost research tool. It runs a Vite dev server intended for
-local exploration only. No authentication, rate limiting, or input sanitization
-has been implemented. Please do not expose it to the public internet as-is.
+Two Dockerfiles are provided: `Dockerfile` (CPU) and `Dockerfile.gpu` (NVIDIA
+GPU).
+
+```bash
+docker build -t striatica .                              # CPU
+docker build -f Dockerfile.gpu -t striatica-gpu .        # GPU
+```
+
+All CLI subcommands (`model`, `discover`, `batch`, `validate`) work in either
+container. Mount a volume to get results out: `-v $(pwd)/output:/app/output`.
+
+### UMAP reproducibility
+
+UMAP output is not reproducible across different library versions, even with the
+same `random_state=42`. A single patch-level bump to numpy, scipy, scikit-learn,
+umap-learn, or any transitive dependency will silently produce completely
+different 3D positions.
+
+The Dockerfiles pin exact versions of the entire UMAP reproducibility chain and
+install them directly with pip — no lockfile resolution, no version drift. Docker
+is the only guaranteed-reproducible path.
+
+### Platform notes
+
+The Docker images support `amd64` and `arm64` natively (Intel/AMD and Apple
+Silicon). The pipeline uses all available CPU cores by default (minus one for
+the OS).
+
+---
+
+# Validation
+
+The pipeline includes a 3-level validation suite that runs automatically on
+every execution.
+
+```bash
+striat validate output.json                              # L1 structural checks
+striat validate output.json --compare reference.json     # L1 + L3 comparison
+```
+
+**Level 1 (structural integrity)** is a hard gate. It checks array alignment,
+position bounds, cluster label validity, feature index continuity, and centroid
+accuracy. If any check fails, the pipeline aborts — no corrupt data gets written.
+
+**Level 2 (embedding quality)** produces a scorecard: trustworthiness (Van der
+Maaten 2009), neighborhood overlap at multiple k values, silhouette score, PCA
+explained variance, and axis spread. Trustworthiness above 0.85 means the 3D
+embedding preserves local high-dimensional structure.
+
+**Level 3 (cross-model comparison)** is optional (`--compare` flag) and compares
+distributional signatures between two datasets.
+
+A validation sidecar JSON is written alongside every output file with all metric
+values.
+
+---
+
+# Visualization
+
+### Views
+
+**Point Cloud** — All features positioned by decoder weight similarity. Color
+by cluster membership or local intrinsic dimension. Click any point to inspect
+metadata, activation stats, VGT growth curve, and Neuronpedia link.
+
+**Circuits** — Visualize which features participate in a circuit. Nodes colored
+by role. Edge threshold slider controls visibility. Circuit integration is being
+rebuilt with Neuronpedia Circuit Tracer (replacing the Jaccard co-activation
+heuristic).
+
+**Cross-view sync** — Selection, camera position, and cluster highlighting
+persist across view switches.
+
+### Controls
+
+| Input                | Action                                         |
+| -------------------- | ---------------------------------------------- |
+| Click                | Select a feature point                         |
+| Search box           | Find features by index or description          |
+| Double-click cluster | Fly camera to cluster centroid                 |
+| Drag                 | Orbit                                          |
+| Scroll               | Zoom                                           |
+| Right-drag           | Pan                                            |
+| Shift-click cluster  | Multi-select clusters (up to 10)               |
+| Cmd+P / Ctrl+P       | Toggle Point Cloud / Circuits view             |
+| Backtick             | Toggle debug console                           |
+
+### Running the frontend
+
+```bash
+cd frontend && pnpm install && pnpm dev
+# Open: http://localhost:5173/?dataset=your-model-output.json
+```
 
 ---
 
@@ -169,529 +277,95 @@ has been implemented. Please do not expose it to the public internet as-is.
 | State        | Zustand 5                                                               |
 | Pipeline     | Python 3.12 + SAELens + TransformerLens + scikit-learn + UMAP + HDBSCAN |
 | Validation   | sklearn trustworthiness + neighborhood overlap + silhouette scoring      |
-| Build        | Vite 7 (frontend), Poetry 2.x (striatica), Docker (recommended)         |
-
-# Operation
-
-### What `striat demo` does
-
-1. Downloads GPT-2 Small feature metadata from Neuronpedia S3 (public, no API
-   key needed)
-2. Loads SAE decoder weight vectors from HuggingFace via SAELens
-3. PCA (768d → 50d) → UMAP (50d → 3d)
-4. HDBSCAN clustering
-5. Local dimension estimation (Participation Ratio + VGT growth curves)
-6. Assembles JSON for the frontend (~19MB for 24,576 features)
-7. Asks if you want to generate the 10 default circuits (5 co-activation + 5
-     similarity) (circuits not generating correctly. WIP.)
-8. Starts the Vite dev server on the first available port from 5173
-
-Compute time is 5–10 minutes on a recent MacBook Pro or equivalent. The data
-pipeline runs on CPU; no GPU required for GPT-2 Small.
-
-### Data not included
-
-The generated dataset is too large to commit (~19MB JSON + circuit files). Every
-clone generates its own data via `striat demo`. Cached intermediates in
-`striatica/data/` speed up subsequent runs.
-
----
-
-# Process Any Model
-
-striatica works with any SAE dictionary available through
-[SAELens](https://github.com/jbloom/SAELens). The demo uses GPT-2 Small Layer 6,
-but you can process anything SAELens supports — and the CLI auto-discovers what's
-available.
-
-All commands below work identically with Docker or Poetry. Docker examples shown
-first; Poetry equivalents follow.
-
-### Discover available models
-
-The `discover` command pulls the live SAELens pretrained registry and shows every
-model with Neuronpedia feature data available for processing:
-
-```bash
-# Docker
-docker run -t --name striatica-discover --rm striatica \
-  discover --sae-types res
-docker run -t --name striatica-discover --rm striatica \
-  discover --families gpt2,gemma2,llama
-
-# Poetry
-poetry run striat discover --sae-types res
-poetry run striat discover --families gpt2,gemma2,llama
-```
-
-This queries SAELens programmatically — no hardcoded model lists. When SAELens
-adds new models, `discover` picks them up automatically.
-
-### Process a model
-
-The recommended way to process a model is by Neuronpedia ID. The CLI
-auto-resolves the SAELens release name, hook point, and S3 batch count:
-
-```bash
-# Docker
-docker run -t --name striatica -v $(pwd)/output:/app/output striatica \
-  model --np-id gpt2-small/6-res-jb
-
-docker run -t --name striatica-gemma --gpus all \
-  -v $(pwd)/output:/app/output striatica-gpu \
-  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
-
-# Poetry
-poetry run striat model --np-id gpt2-small/6-res-jb
-poetry run striat model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
-poetry run striat model --np-id llama3.1-8b/15-llamascope-res-32k --device cuda
-```
-
-The `--np-id` flag checks the SAELens registry before downloading anything. If
-the model doesn't exist, it fails fast with an error and suggests running
-`discover`.
-
-You can also pass explicit SAELens parameters if you need full control:
-
-```bash
-poetry run striat model \
-  --model gpt2-small \
-  --layer 6-res-jb \
-  --sae-release gpt2-small-res-jb \
-  --sae-hook blocks.6.hook_resid_pre \
-  --device auto
-```
-
-### Process a transcoder (Gemmascope)
-
-striatica also supports Gemmascope transcoders from Google's
-[gemma-scope](https://huggingface.co/google/gemma-scope-2b-pt-transcoders)
-collection. Transcoders map between transformer layers and produce decoder
-vectors that live in a higher-dimensional space (2304D for Gemma 2 2B vs 768D
-for GPT-2 Small). The geometric pipeline processes them identically.
-
-```bash
-# Poetry
-poetry run striat model --transcoder gemma-2-2b/12/604 --device auto
-
-# Docker
-docker run -t --name striatica-gemma --gpus all \
-  -v $(pwd)/output:/app/output striatica-gpu \
-  model --transcoder gemma-2-2b/12/604 --device cuda
-
-# On a Vast.ai / cloud GPU instance (pip install, no Poetry)
-python -m pipeline model --transcoder gemma-2-2b/12/604 --device auto --json-export
-```
-
-The `--transcoder` flag takes a `model/layer/l0` spec. The L0 value selects the
-sparsity variant — lower L0 means sparser activations. Available variants for
-Gemma 2 2B layer 12 width_16k: 6, 10, 18, 32, 60, 111, 204, 359, 604, 955.
-
-Transcoder weights are downloaded from HuggingFace (public, CC-BY-4.0, no auth
-required). Feature explanations from Neuronpedia are not yet available for
-transcoders, so the output JSON contains geometry only — positions, clusters,
-local dimensions, and VGT growth curves.
-
-| Flag                | Description                           | Default                                      |
-| ------------------- | ------------------------------------- | -------------------------------------------- |
-| `--transcoder`      | Transcoder spec: `model/layer/l0`     | —                                            |
-| `--transcoder-repo` | HuggingFace repo ID                   | `google/gemma-scope-2b-pt-transcoders`       |
-| `--transcoder-width`| Width variant                         | `width_16k`                                  |
-
-### Batch processing
-
-Process multiple models sequentially with resume capability:
-
-```bash
-# Docker
-docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica \
-  batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb,gpt2-small/10-res-jb" \
-  --continue-on-error
-
-# Poetry
-poetry run striat batch \
-  --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb,gpt2-small/10-res-jb" \
-  --continue-on-error
-
-# Force reprocess even if output exists
-docker run -t --name striatica-batch -v $(pwd)/output:/app/output striatica \
-  batch --np-ids "..." --force
-```
-
-### Hardware guidance
-
-| Model              | Features | RAM   | Time (approx) | GPU                  |
-| ------------------ | -------- | ----- | ------------- | -------------------- |
-| GPT-2 Small (demo) | 24,576   | 16GB  | 5–10 min      | not needed           |
-| Gemma 2B (16K)     | 16,384   | 16GB  | 10–20 min     | recommended          |
-| Gemma 2B (65K)     | 65,536   | 32GB  | 30–60 min     | recommended          |
-| Llama 3.1 8B (32K) | 32,768   | 32GB  | 30–60 min     | strongly recommended |
-| Llama 3.1 8B (131K)| 131,072  | 64GB+ | 1–2 hr        | strongly recommended |
-| Gemma 2 9B+        | 131,072+ | 64GB+ | 2–6 hr        | required             |
-
-VGT growth curve computation is the bottleneck — it's O(n²) on the feature
-count. Large dictionaries benefit significantly from GPU acceleration.
-
-### After generating
-
-Once your model's data is in `frontend/public/data/`, launch the frontend and
-pass the dataset filename as a query parameter:
-
-```bash
-cd frontend && pnpm install && pnpm dev
-# Then open: http://localhost:5173/?dataset=gemma-2-2b-12-gemmascope-res-16k.json
-```
-
-The `striat model` command prints the exact URL to open when it finishes.
-
-### CLI reference
-
-| Flag                   | Description                                          | Default                                |
-| ---------------------- | ---------------------------------------------------- | -------------------------------------- |
-| `--np-id`              | Neuronpedia ID (auto-resolves everything)            | —                                      |
-| `--model`              | Model ID (explicit mode)                             | —                                      |
-| `--layer`              | Layer identifier (explicit mode)                     | —                                      |
-| `--sae-release`        | SAELens release name (explicit mode)                 | —                                      |
-| `--sae-hook`           | SAELens hook point (explicit mode)                   | —                                      |
-| `--transcoder`         | Transcoder spec: `model/layer/l0`                    | —                                      |
-| `--transcoder-repo`    | HuggingFace repo for transcoder weights              | `google/gemma-scope-2b-pt-transcoders` |
-| `--transcoder-width`   | Width variant directory                              | `width_16k`                            |
-| `--num-batches`        | S3 batch count (auto-probed with `--np-id`)          | 24                                     |
-| `--features-per-batch` | Features per S3 batch                                | 1024                                   |
-| `--device`             | Torch device: `auto`, `cuda`, `mps`, `cpu`           | `auto`                                 |
-| `--json-export`        | Export JSON only, skip frontend launch instructions  | off                                    |
-| `--include-semantics`  | Include semantic labels for non-public-tier models   | off                                    |
-
-### Validate output
-
-```bash
-striat validate output.json                              # L1 structural checks
-striat validate output.json --compare reference.json     # L1 + L3 comparison
-```
-
----
-
-# Docker Reference
-
-Two Dockerfiles are provided: `Dockerfile` (CPU) and `Dockerfile.gpu` (NVIDIA
-GPU). Build whichever you need:
-
-```bash
-docker build -t striatica .                              # CPU
-docker build -f Dockerfile.gpu -t striatica-gpu .        # GPU
-```
-
-All CLI subcommands (`model`, `discover`, `batch`) work in either container.
-Mount a volume to `-v $(pwd)/output:/app/output` to get results out. Use
-`--name` to keep `docker ps` clean.
-
-### Semantic labels
-
-Semantic labels (feature explanations) are redacted by default for models
-outside the public tier. Add `--include-semantics` to any `model` command to
-include them. This works the same in Docker and Poetry. (Batch support for
-`--include-semantics` is planned but not yet implemented.)
-
-Please read the [Responsible Use](#responsible-use-interpretability-safety) section before publishing
-semantic data for capable models.
-
-### Platform and performance notes
-
-The Docker image uses `python:3.12-slim` which supports `amd64` and `arm64`
-natively. Intel, AMD, and Apple Silicon all work out of the box. If you're on
-something else, building from the Dockerfile should handle it.
-
-**Laptop users:** The pipeline uses all available CPU cores by default (minus
-one for the OS). On a laptop this can push thermals hard, especially during VGT
-computation. If you're on a MacBook or similar thin-and-light, consider using
-Docker Desktop's resource limits (Settings → Resources) to cap CPU cores, or use
-a cloud instance for anything beyond GPT-2 Small. The pipeline is designed for
-beefy server CPUs — it will happily saturate whatever you give it.
-
----
-
-# Cloud Preprocessing
-
-Scripts are included for running the pipeline on cloud GPU instances. Use
-`--plan` to see instance size recommendations before spending money.
-
-```bash
-# See recommendations (dry run, no cost)
-./scripts/cloud_preprocess.sh --plan --gpu --np-id gemma-2-9b/20-gemmascope-res-16k
-```
-
-### Lambda AI (recommended for GPU)
-
-```bash
-# On a Lambda GPU instance:
-./scripts/lambda_quickstart.sh --np-id gemma-2-2b/12-gemmascope-res-16k
-
-# Or batch multiple models:
-./scripts/lambda_quickstart.sh --np-ids "gpt2-small/6-res-jb,gemma-2-2b/12-gemmascope-res-16k"
-```
-
-A single A100 processes GPT-2 Small in ~2 minutes and Gemma 2B in ~20 minutes.
-
-### Remote compute, local visualization
-
-To run on any remote server and view results locally:
-
-```bash
-# On remote server (Docker or Poetry — either works)
-docker run -t --name striatica-remote -v $(pwd)/output:/app/output striatica \
-  model --np-id gemma-2-2b/12-gemmascope-res-16k --device cuda
-
-# Copy output to your local machine
-scp remote:~/output/*.json ./frontend/public/data/
-
-# On local machine
-cd frontend && pnpm dev
-# Open: http://localhost:5173/?dataset=gemma-2-2b-12-gemmascope-res-16k.json
-```
-
----
-
-# Circuits (WIP)
-
-Generate circuit data to see how features connect during specific computations.
-
-```bash
-# All 10 default circuits (5 co-activation + 5 similarity)
-poetry run striat circuits --batch-defaults
-
-# Co-activation: which features fire together on a prompt
-poetry run striat circuits \
-  --type coactivation \
-  --prompt "The capital of France is" \
-  --name my-capital-circuit
-
-# Similarity: BFS through cosine-similar features from a seed
-poetry run striat circuits \
-  --type similarity \
-  --seed-feature 23123 \
-  --name my-sim-circuit
-```
-
-Co-activation circuits require the ML extras (runs the model on CPU). Similarity
-circuits only need the base install — they use cosine similarity data already
-present in the Neuronpedia download.
-
-| Flag               | Description                                           | Default                            |
-| ------------------ | ----------------------------------------------------- | ---------------------------------- |
-| `--batch-defaults` | Generate all 10 default circuits                      | —                                  |
-| `--type`           | `coactivation` or `similarity`                        | required unless `--batch-defaults` |
-| `--prompt`         | Input text (co-activation only)                       | required for coactivation          |
-| `--seed-feature`   | Feature index for BFS root (similarity only)          | required for similarity            |
-| `--name`           | Circuit ID, used as filename                          | auto-generated                     |
-| `--top-k`          | Features to include (coact) / neighbors per hop (sim) | 30                                 |
-| `--min-weight`     | Minimum edge weight to keep                           | 0.1                                |
-| `--depth`          | BFS depth for similarity                              | 2                                  |
-
-Output: `frontend/public/data/circuits/<name>.json` + updated `manifest.json`
-
----
-
-# Views
-
-**Point Cloud** — All features positioned by decoder weight similarity (UMAP
-projection to 3D). Color by cluster membership or local intrinsic dimension.
-Click any point to inspect its metadata, activation stats, top tokens, VGT
-growth curve, and Neuronpedia link.
-
-**Circuits** — Select a circuit from the panel to visualize which features
-participate. Nodes colored by role: source (green), processing (cyan), output
-(amber). Edge threshold slider controls visibility by connection strength. ⌘P /
-Ctrl+P toggles between views.
-
-**Cross-view sync** — Selection, camera position, and cluster highlighting all
-persist across view switches. Circuit members are highlighted in the point cloud
-(boosted size and brightness). Selecting a circuit member and switching to
-Circuits view auto-loads the relevant circuit.
-
----
-
-# Controls
-
-| Input                | Action                                                      |
-| -------------------- | ----------------------------------------------------------- |
-| Click                | Select a feature point                                      |
-| Search box           | Find features by index or description, click to fly to them |
-| Double-click cluster | Fly camera to cluster centroid                              |
-| Drag                 | Orbit                                                       |
-| Scroll               | Zoom (speed adapts to distance)                             |
-| Right-drag           | Pan                                                         |
-| Shift-click cluster  | Multi-select clusters (up to 10)                            |
-| ⌘P / Ctrl+P          | Toggle Point Cloud ↔ Circuits view                          |
-| Backtick (`` ` ``)   | Toggle debug console (live state, transitions)              |
-
----
-
-# Installation Details
-
-### Pipeline (Python)
-
-```bash
-poetry install --extras ml    # full install with PyTorch, SAELens, TransformerLens (~2GB)
-poetry install                # lightweight: numpy/scipy/sklearn/umap/hdbscan only
-```
-
-The lightweight install is enough for similarity circuits and re-running the
-frontend on existing data. Co-activation circuits and `striat model` require the
-ML extras.
-
-#### Linux prerequisites
-
-Some Python dependencies (notably hdbscan) compile C extensions from source. On
-Ubuntu/Debian, install build tools before running `poetry install`:
-
-```bash
-sudo apt update && sudo apt install -y build-essential python3-dev
-```
-
-#### GPU and VM notes
-
-The data pipeline device flag controls where PyTorch runs SAE and model
-inference. On an NVIDIA GPU, this is `cuda`. On Apple Silicon, `mps`. If you are
-in a VM without GPU passthrough or on a system without a supported GPU, the
-pipeline falls back to `cpu` — everything still works, just slower for larger
-models.
-
-| System                             | Device |
-| ---------------------------------- | ------ |
-| NVIDIA GPU (native or passthrough) | `cuda` |
-| Apple Silicon (M1/M2/M3/M4)        | `mps`  |
-| VM without GPU / CPU-only          | `cpu`  |
-
-GPT-2 Small runs comfortably on CPU. Gemma 2B and larger models benefit
-significantly from GPU acceleration.
-
-### Frontend (Node.js)
-
-```bash
-cd frontend
-pnpm install        # or: npm install -g pnpm && pnpm install
-pnpm dev            # dev server, default port 5173
-pnpm build          # production build
-pnpm preview        # serve production build
-```
-
-If you don't have pnpm, `corepack enable` will make it available (requires
-Node.js 18+).
-
-### Tests
-
-```bash
-poetry run pytest tests/ -v                  # all fast tests
-poetry run pytest tests/ -v -m "not slow"    # skip model-download tests
-```
-
-### Validation
-
-The pipeline includes a 3-level validation suite that runs automatically on
-every pipeline execution and can also be run standalone on any output JSON.
-
-```bash
-# Validate an existing output file (Level 1: structural integrity)
-poetry run striat validate frontend/public/data/gpt2-small-6-res-jb.json
-
-# Compare against a reference dataset (Level 3: distributional comparison)
-poetry run striat validate new-output.json --compare reference.json
-```
-
-**Level 1 (structural integrity)** is a hard gate that runs automatically before
-the pipeline writes any JSON. It checks array alignment, position bounds,
-cluster label validity, feature index continuity, and centroid accuracy. If any
-check fails, the pipeline aborts — no corrupt data gets written to disk.
-
-**Level 2 (embedding quality)** runs automatically after Level 1 and produces a
-scorecard. The headline metric is **trustworthiness** (Van der Maaten 2009):
-"are the things that look close in 3D actually close in the original
-high-dimensional space?" A score above 0.92 is good; below 0.85 means the
-embedding is distorting local structure. The scorecard also includes neighborhood
-overlap at multiple k values, silhouette score for cluster quality, PCA
-explained variance, and axis spread checks. These metrics do not depend on UMAP
-coordinate reproducibility — they only measure whether the topology was
-preserved in the specific run.
-
-**Level 3 (cross-model comparison)** is optional (via `--compare` flag) and
-compares distributional signatures between two datasets: cluster count ratio,
-uncategorized fraction, local dimension distributions (KS test), Wasserstein
-distance, silhouette comparison, and cluster size Gini coefficients. Most useful
-for verifying a re-run after a code change, or comparing different layers of the
-same model.
-
-A validation sidecar JSON (`*-validation.json`) is written alongside every output
-file with all metric values, suitable for automated monitoring or Grafana
-ingestion.
-
----
+| Build        | Vite 7 (frontend), Docker (pipeline)                                    |
 
 # Project Structure
 
 ```
 pipeline/          # Python package — config, download, vectors, reduce, cluster,
-                   #   circuits, local_dim, prepare, validate, cli
-scripts/           # Entry point scripts (process_gpt2_small, generate_circuits)
+                   #   circuits, local_dim, prepare, validate, cli, metrics
+scripts/           # Launch scripts (vast_launch, cloud_preprocess, providers/)
 tests/             # pytest suite
 data/              # Cached downloads (JSONL from Neuronpedia S3, gitignored)
 
 frontend/
   src/
-    components/    # UI panels (TopBar, NavPanel, CircuitPanel, DetailPanel, DebugConsole)
-    three/         # R3F components (PointCloudMesh, FlyToCamera, CircuitNodes, etc.)
+    components/    # UI panels (TopBar, NavPanel, CircuitPanel, DetailPanel)
+    three/         # R3F components (PointCloudMesh, FlyToCamera, CircuitNodes)
     views/         # View compositions (PointCloudView, CircuitGraphView)
     stores/        # Zustand store (useAppStore)
     shaders/       # Custom GLSL vertex/fragment shaders
     config/        # Centralized rendering parameters
     types/         # TypeScript interfaces
     utils/         # Data loaders, color scales, camera sync
-  public/data/     # Generated JSON (gitignored — run striat demo to populate)
+  public/data/     # Generated JSON (gitignored — run pipeline to populate)
 ```
+
+---
+
+# Security
+
+striatica is a localhost research tool. The Vite dev server is intended for
+local exploration only. No authentication, rate limiting, or input sanitization
+has been implemented. Do not expose it to the public internet.
 
 ---
 
 # Roadmap
 
-Planned features, roughly in priority order:
+- **Circuit Tracer integration** — Causal circuit data via Neuronpedia Circuit
+  Tracer transcoders, replacing the Jaccard co-activation heuristic.
+- **Transcoder semantic explanations** — Wire Neuronpedia feature explanations
+  into the transcoder pipeline path.
+- **Multi-model comparison** — Load multiple model datasets and compare
+  geometric properties across architectures.
+- **Local Dimension view** — Third view mode visualizing per-feature intrinsic
+  dimensionality.
+- **Pipeline observability** — Grafana dashboards for reproducibility drift,
+  performance, and data quality.
+- **3D export** — glTF/OBJ export for Blender and presentations.
+- **Public deployment mode** — Auth, rate limiting, and hardening for hosted
+  instances.
 
-- **Gemma 2 transcoder integration** — causal circuit data via Neuronpedia Circuit
-  Tracer, replacing the Jaccard co-activation heuristic. In progress: Gemma 2 2B
-  geometric data generated, transcoder mapping system under development.
-- **Docker x86 reproducibility** — force `--platform linux/amd64` in Dockerfiles
-  so UMAP output is identical regardless of host architecture (ARM vs x86). Commit
-  generated data to git as a build artifact rather than regenerating per clone.
-- **Pipeline observability** — Grafana dashboards for reproducibility drift
-  monitoring, pipeline performance, data quality, and cost tracking. Dashboard
-  JSONs built, metrics emission module ready, integration in progress.
-- **Multi-model support** — extend transcoder/circuit tracing pipeline to Llama,
-  Qwen, and other model families via Neuronpedia's nnsight backend.
-- **Multi-dataset switching** — load multiple model JSONs and switch between
-  them in the UI
-- **Local Dimension view** — third view mode visualizing per-feature intrinsic
-  dimensionality (view component built, data pipeline complete)
-- **Distributed processing** — split monolithic pipeline across 2+ GPU containers
-  for large models (65K+ features)
-- **3D export** — export clusters or circuits as glTF/OBJ for use in Blender, 3D
-  viewers, or presentations
-- **Annotation system** — save and share named camera positions + selection
-  states
-- **Public deployment mode** — auth, rate limiting, and input sanitization for
-  hosted instances
+---
+
+# Development
+
+### Poetry (development only)
+
+Poetry is for active development of the pipeline code. It is not the recommended
+way to run the pipeline — use Docker for that. The committed `poetry.lock` pins
+the versions that produced the current data. Never run `poetry lock` unless you
+intend to regenerate all data and visually verify the output.
+
+```bash
+poetry install --extras ml    # full install with PyTorch, SAELens, TransformerLens
+poetry install                # lightweight: numpy/scipy/sklearn/umap/hdbscan only
+```
+
+### Tests
+
+```bash
+poetry run pytest tests/ -v                  # all tests
+poetry run pytest tests/ -v -m "not slow"    # skip GPU/download tests
+```
+
+### Frontend
+
+```bash
+cd frontend
+pnpm install
+pnpm dev            # dev server, port 5173
+pnpm build          # production build
+```
 
 ---
 
 # Contributing
 
-striatica is a solo research project and very much a work in progress. The
-geometric pipeline is stable and producing real data across multiple model
-families, but circuit integration is being rebuilt and several features are in
-active development. If you run into bugs, have questions, or want to suggest
-improvements, please open an issue or start a thread in
-[Discussions](https://github.com/catwhisperingninja/striatica/discussions). Pull
-requests are welcome.
+striatica is a research project under active development. The geometric pipeline
+is stable and producing real data across multiple model families. Circuit
+integration is being rebuilt with causal methods.
 
-If something doesn't work on your system, please include your OS, Python
-version, Node version, and any error output — it helps enormously. If you're
-having issues with UMAP reproducibility, see the
-[UMAP Reproducibility](#umap-reproducibility--why-docker-matters) section and
-try Docker first.
+If you run into issues, please open an issue with your OS, Python version, and
+error output. Pull requests are welcome.
