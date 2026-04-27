@@ -238,6 +238,14 @@ class TestTranscoderCLI:
         )
         monkeypatch.setattr("pipeline.prepare.prepare_json", lambda *args, **kwargs: None)
 
+        # Skip validation — this test verifies dispatch, not validation
+        class _FakeReport:
+            passed = True
+            def print_scorecard(self): pass
+        monkeypatch.setattr("pipeline.validate.validate_level1_arrays", lambda *a, **kw: _FakeReport())
+        monkeypatch.setattr("pipeline.validate.validate_level2", lambda *a, **kw: _FakeReport())
+        monkeypatch.setattr("pipeline.validate.write_validation_sidecar", lambda *a, **kw: None)
+
         _run_process_pipeline(cfg, tmp_path / "data", device="cpu", redact_semantics=True)
 
         assert called["load_transcoder_vectors"] is True
