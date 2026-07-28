@@ -2,13 +2,24 @@
 // Controls panel for circuit view: threshold slider, node list, circuit info.
 import { useEffect, useRef } from 'react'
 import { useAppStore } from '../stores/useAppStore'
-import type { CircuitManifestEntry } from '../types/circuit'
-import { COLORS } from '../config/rendering'
+import type { CircuitManifestEntry, CircuitNode, CircuitType } from '../types/circuit'
+import { buildRoleColorMap, orderedRoles, roleLabel } from '../utils/circuitRoles'
+import { graphUrl } from '../utils/neuronpediaUrls'
 
-const ROLE_LABELS: Record<string, string> = {
-  source: 'Source',
-  intermediate: 'Processing',
-  sink: 'Output',
+// Circuit-type display order + labels. Unknown types fall through to their raw
+// string so nothing ever silently vanishes from the selector.
+const TYPE_ORDER: CircuitType[] = ['coactivation', 'similarity', 'traced']
+const TYPE_LABELS: Record<string, string> = {
+  coactivation: 'Co-activation',
+  similarity: 'Similarity',
+  traced: 'Attribution graphs (traced)',
+}
+
+const COPY = {
+  loadingManifest: 'Loading manifest...',
+  noCircuits: 'No circuits available for this dataset',
+  tracedEdgeNote: 'Attribution edges span layers — not renderable in a single-layer atlas',
+  viewGraph: 'View graph on Neuronpedia',
 }
 
 export default function CircuitPanel() {
@@ -40,8 +51,18 @@ export default function CircuitPanel() {
 
   // Circuit selector when no circuit is loaded
   if (!circuitData) {
-    const coact = circuitManifest?.circuits.filter((c) => c.type === 'coactivation') ?? []
-    const sim = circuitManifest?.circuits.filter((c) => c.type === 'similarity') ?? []
+    const circuits = circuitManifest?.circuits ?? []
+    const groups = new Map<string, CircuitManifestEntry[]>()
+    for (const c of circuits) {
+      const arr = groups.get(c.type) ?? []
+      arr.push(c)
+      groups.set(c.type, arr)
+    }
+    const orderedTypes = [
+      ...TYPE_ORDER.filter((t) => groups.has(t)),
+      ...[...groups.keys()].filter((t) => !TYPE_ORDER.includes(t as CircuitType)).sort(),
+    ]
+
     const selectedFeature = dataset && selectedIndex !== null
       ? dataset.features[selectedIndex]
       : null
@@ -83,28 +104,49 @@ export default function CircuitPanel() {
 
         <div className="text-xs font-bold text-gray-300 mb-3">Select Circuit</div>
         {!circuitManifest ? (
-          <p className="text-[10px] text-gray-600">Loading manifest...</p>
+          <p className="text-[10px] text-gray-600">{COPY.loadingManifest}</p>
+        ) : circuits.length === 0 ? (
+          <p className="text-[10px] text-gray-600">{COPY.noCircuits}</p>
         ) : (
           <>
-            {coact.length > 0 && (
-              <CircuitGroup label="Co-activation" entries={coact} onSelect={loadCircuitById} />
-            )}
-            {sim.length > 0 && (
-              <CircuitGroup label="Similarity" entries={sim} onSelect={loadCircuitById} />
-            )}
+            {orderedTypes.map((t) => (
+              <CircuitGroup
+                key={t}
+                label={TYPE_LABELS[t] ?? t}
+                entries={groups.get(t) ?? []}
+                onSelect={loadCircuitById}
+              />
+            ))}
           </>
         )}
       </div>
     )
   }
 
+  // Traced attribution circuits arrive edge-free (their edges span layers and
+  // aren't renderable in a single-layer atlas) — the edge slider is meaningless.
+  const isTracedEdgeless = circuitData.type === 'traced' && circuitData.edges.length === 0
   const visibleEdges = circuitData.edges.filter((e) => e.weight >= edgeThreshold).length
 
-  // Group nodes by role
-  const byRole = { source: [] as typeof circuitData.nodes, intermediate: [] as typeof circuitData.nodes, sink: [] as typeof circuitData.nodes }
+  // Role → color + display order, generalized beyond the legacy taxonomy.
+  const roleColorMap = buildRoleColorMap(circuitData.nodes, '2d')
+  const roles = orderedRoles(circuitData.nodes)
+  const byRole = new Map<string, CircuitNode[]>()
   for (const node of circuitData.nodes) {
-    ;(byRole[node.role] ?? byRole.intermediate).push(node)
+    const arr = byRole.get(node.role) ?? []
+    arr.push(node)
+    byRole.set(node.role, arr)
   }
+
+  // Cross-layer accounting for traced circuits (all fields optional).
+  const crossLayer = circuitData.metadata?.crossLayerMembers
+  const inLayer = circuitData.nodes.length
+  const layerInfo = typeof crossLayer === 'number'
+    ? `${inLayer} of ${inLayer + crossLayer} graph nodes are in this layer; ${crossLayer} cross-layer members recorded`
+    : null
+
+  // Neuronpedia attribution-graph slug (traced circuits only).
+  const graphSlug = circuitData.metadata?.slug
 
   const handleNodeClick = (featureIndex: number) => {
     setSelected(featureIndex)
@@ -137,11 +179,23 @@ export default function CircuitPanel() {
         </div>
       )}
 
-      {/* Threshold slider */}
+      {/* Attribution graph link (traced circuits carry a Neuronpedia slug) */}
+      {graphSlug && dataset && (
+        <a
+          href={graphUrl(dataset.model, graphSlug)}
+          target="_blank"
+          rel="noreferrer"
+          className="block text-[10px] text-cyan-400 hover:text-cyan-300 mb-3"
+        >
+          {COPY.viewGraph} &#8599;
+        </a>
+      )}
+
+      {/* Threshold slider (disabled for edge-free traced circuits) */}
       <div className="mb-3">
         <div className="flex justify-between text-[10px] text-gray-500 mb-1">
           <span>Edge threshold</span>
-          <span className="font-mono">{edgeThreshold.toFixed(2)}</span>
+          {!isTracedEdgeless && <span className="font-mono">{edgeThreshold.toFixed(2)}</span>}
         </div>
         <input
           type="range"
@@ -149,32 +203,48 @@ export default function CircuitPanel() {
           max={1}
           step={0.05}
           value={edgeThreshold}
+          disabled={isTracedEdgeless}
           onChange={(e) => setEdgeThreshold(parseFloat(e.target.value))}
-          className="w-full h-1 appearance-none bg-gray-800 rounded-full accent-[--color-cluster-0] cursor-pointer"
+          className={`w-full h-1 appearance-none bg-gray-800 rounded-full accent-[--color-cluster-0] ${
+            isTracedEdgeless ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+          }`}
         />
-        <div className="text-[9px] text-gray-600 mt-0.5">
-          {visibleEdges} / {circuitData.edges.length} edges visible
-        </div>
+        {isTracedEdgeless ? (
+          <>
+            <div className="text-[9px] text-amber-500/70 mt-1 leading-relaxed">
+              {COPY.tracedEdgeNote}
+            </div>
+            {layerInfo && (
+              <div className="text-[9px] text-gray-500 mt-1 leading-relaxed">
+                {layerInfo}
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-[9px] text-gray-600 mt-0.5">
+            {visibleEdges} / {circuitData.edges.length} edges visible
+          </div>
+        )}
       </div>
 
       {/* Legend */}
-      <div className="flex gap-3 mb-3 text-[9px]">
-        {(['source', 'intermediate', 'sink'] as const).map((role) => (
+      <div className="flex gap-3 mb-3 text-[9px] flex-wrap">
+        {roles.map((role) => (
           <div key={role} className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: COLORS.roles[role] }} />
-            <span className="text-gray-500">{ROLE_LABELS[role]}</span>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: roleColorMap.get(role) }} />
+            <span className="text-gray-500">{roleLabel(role)}</span>
           </div>
         ))}
       </div>
 
       {/* Node list grouped by role */}
-      {(['source', 'intermediate', 'sink'] as const).map((role) => {
-        const nodes = byRole[role]
+      {roles.map((role) => {
+        const nodes = byRole.get(role) ?? []
         if (nodes.length === 0) return null
         return (
           <div key={role} className="mb-2">
-            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1" style={{ color: COLORS.roles[role] }}>
-              {ROLE_LABELS[role]} ({nodes.length})
+            <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: roleColorMap.get(role) }}>
+              {roleLabel(role)} ({nodes.length})
             </div>
             {nodes.map((node) => {
               const feat = dataset?.features[node.featureIndex]

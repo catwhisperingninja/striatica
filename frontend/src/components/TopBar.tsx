@@ -2,10 +2,9 @@
 import { useAppStore } from '../stores/useAppStore'
 import type { ViewMode } from '../types/feature'
 
-const VIEW_TABS: { label: string; mode: ViewMode; ready: boolean }[] = [
-  { label: 'Point Cloud', mode: 'pointCloud', ready: true },
-  { label: 'Circuits', mode: 'circuits', ready: true },
-  { label: 'Local Dim', mode: 'localDim', ready: false },
+const VIEW_TABS: { label: string; mode: ViewMode }[] = [
+  { label: 'Point Cloud', mode: 'pointCloud' },
+  { label: 'Circuits', mode: 'circuits' },
 ]
 
 export default function TopBar() {
@@ -92,16 +91,13 @@ export default function TopBar() {
           return (
             <button
               key={tab.mode}
-              disabled={!tab.ready}
-              onClick={() => tab.ready && setViewMode(tab.mode)}
+              onClick={() => setViewMode(tab.mode)}
               className={`px-3 py-1 text-[11px] rounded transition-colors ${
                 isActive
                   ? 'text-[--color-cluster-0] bg-[#0e2a31] cursor-pointer'
-                  : tab.ready
-                    ? 'text-gray-500 hover:text-gray-200 cursor-pointer'
-                    : 'text-gray-700 cursor-not-allowed opacity-40'
+                  : 'text-gray-500 hover:text-gray-200 cursor-pointer'
               }`}
-              title={!tab.ready ? 'Coming soon' : `${tab.label} (⌘P to toggle)`}
+              title={`${tab.label} (⌘P to toggle)`}
             >
               {tab.label}
             </button>

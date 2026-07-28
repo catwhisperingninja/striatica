@@ -1,12 +1,8 @@
 import { useAppStore } from '../stores/useAppStore'
 import GrowthCurveChart from './GrowthCurveChart'
 import { COLORS } from '../config/rendering'
-
-const ROLE_LABELS: Record<string, string> = {
-  source: 'Source',
-  intermediate: 'Processing',
-  sink: 'Output',
-}
+import { buildRoleColorMap, roleLabel } from '../utils/circuitRoles'
+import { featureUrl } from '../utils/neuronpediaUrls'
 
 export default function DetailPanel() {
   const dataset = useAppStore((s) => s.dataset)
@@ -139,6 +135,7 @@ export default function DetailPanel() {
       {viewMode === 'circuits' && circuitData && (() => {
         const circuitNode = circuitData.nodes.find((n) => n.featureIndex === selectedIndex)
         if (!circuitNode) return null
+        const roleColorMap = buildRoleColorMap(circuitData.nodes, '2d')
         const connectedEdges = circuitData.edges.filter(
           (e) => e.source === selectedIndex || e.target === selectedIndex
         )
@@ -149,10 +146,13 @@ export default function DetailPanel() {
             </div>
             <Stat
               label="Role"
-              value={ROLE_LABELS[circuitNode.role] ?? circuitNode.role}
-              color={COLORS.roles[circuitNode.role]}
+              value={roleLabel(circuitNode.role)}
+              color={roleColorMap.get(circuitNode.role)}
             />
             <Stat label="Activation" value={circuitNode.activation.toFixed(3)} />
+            {circuitNode.influence !== undefined && (
+              <Stat label="Influence" value={circuitNode.influence.toFixed(3)} />
+            )}
             {connectedEdges.length > 0 && (
               <div className="mt-2">
                 <div className="text-[10px] text-gray-500 mb-1">
@@ -181,10 +181,7 @@ export default function DetailPanel() {
         <button
           className="block w-full py-1.5 bg-gray-900 border border-[--color-panel-border] rounded-md text-[11px] text-gray-400 cursor-pointer hover:border-[--color-cluster-0] hover:text-[--color-cluster-0] transition-colors text-center"
           onClick={() => {
-            window.open(
-              `https://neuronpedia.org/${dataset.model}/${dataset.layer}/${feature.index}`,
-              '_blank'
-            )
+            window.open(featureUrl(dataset, feature.index), '_blank')
           }}
         >
           Open in Neuronpedia

@@ -25,3 +25,9 @@ dist-ssr
 
 # Ephemeral test/generated data
 public/data/
+
+# Playwright
+test-results/
+playwright-report/
+/blob-report/
+/playwright/.cache/

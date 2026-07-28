@@ -2,7 +2,7 @@
 import { create } from 'zustand'
 import type { ColorMode, ViewMode, DatasetJSON, FeatureData } from '../types/feature'
 import type { CircuitData, CircuitManifest } from '../types/circuit'
-import { loadCircuit, listDatasets, loadDataset, type DatasetEntry } from '../utils/dataLoader'
+import { loadCircuit, loadCircuitManifest, loadDataset, type DatasetEntry } from '../utils/dataLoader'
 
 /** Maps featureIndex → list of circuit IDs that contain it */
 export type CircuitMembershipIndex = Map<number, string[]>
@@ -37,6 +37,8 @@ interface AppState {
   circuitManifest: CircuitManifest | null
   circuitMembership: CircuitMembershipIndex
   circuitRepFeatures: CircuitRepFeatures
+  /** Dataset file the currently-loaded circuit manifest/membership belongs to. */
+  circuitsForDataset: string | null
   edgeThreshold: number
 
   // Actions
@@ -57,6 +59,7 @@ interface AppState {
   setIsolateUncategorized: (isolate: boolean) => void
   setCircuitData: (data: CircuitData | null) => void
   setCircuitManifest: (manifest: CircuitManifest | null) => void
+  loadCircuitsForDataset: (file: string) => Promise<void>
   buildCircuitMembership: () => Promise<void>
   loadCircuitById: (id: string) => Promise<void>
   setEdgeThreshold: (threshold: number) => void
@@ -88,6 +91,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   circuitManifest: null,
   circuitMembership: new Map<number, string[]>(),
   circuitRepFeatures: new Map(),
+  circuitsForDataset: null,
   edgeThreshold: 0.1,
 
   setDataset: (data) => set({ dataset: data, loading: false, error: null }),
@@ -97,7 +101,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   switchDataset: async (file) => {
     const state = get()
     if (state.currentDatasetFile === file) return
-    // Reset everything, then load the new dataset
+    // Reset everything (including all circuit state — the old dataset's circuit
+    // feature indices are meaningless for the new dataset), then load the new
+    // dataset and its circuits in parallel.
     set({
       loading: true,
       error: null,
@@ -109,17 +115,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       flyTarget: null,
       isolateUncategorized: false,
       circuitData: null,
+      circuitManifest: null,
+      circuitMembership: new Map<number, string[]>(),
+      circuitRepFeatures: new Map(),
+      circuitsForDataset: null,
       viewMode: 'pointCloud' as ViewMode,
       resetKey: state.resetKey + 1,
     })
+    // Fire-and-forget: has its own request-token guard on currentDatasetFile.
+    void get().loadCircuitsForDataset(file)
     try {
       const data = await loadDataset(`/data/${file}`)
+      // Token guard: a rapid second switch may have moved on while we awaited.
+      if (get().currentDatasetFile !== file) return
       set({ dataset: data, loading: false })
       // Update URL without reload so bookmarking works
       const url = new URL(window.location.href)
       url.searchParams.set('dataset', file)
       window.history.replaceState({}, '', url.toString())
     } catch (e) {
+      if (get().currentDatasetFile !== file) return
       set({ error: (e as Error).message, loading: false })
     }
   },
@@ -183,9 +198,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setIsolateUncategorized: (isolate) => set({ isolateUncategorized: isolate, selectedClusters: new Set<number>() }),
   setCircuitData: (data) => set({ circuitData: data }),
   setCircuitManifest: (manifest) => set({ circuitManifest: manifest }),
+  loadCircuitsForDataset: async (file) => {
+    // Fetch the per-dataset manifest (resolves to {circuits: []} if absent).
+    const manifest = await loadCircuitManifest(file)
+    // Request-token guard: if the dataset changed while we were fetching, the
+    // circuits we just loaded are stale — drop them.
+    if (get().currentDatasetFile !== file) return
+    set({ circuitManifest: manifest, circuitsForDataset: file })
+    await get().buildCircuitMembership()
+  },
   buildCircuitMembership: async () => {
-    const { circuitManifest } = get()
+    const { circuitManifest, currentDatasetFile } = get()
     if (!circuitManifest) return
+    const token = currentDatasetFile
     const index = new Map<number, string[]>()
     const repFeatures: CircuitRepFeatures = new Map()
 
@@ -232,6 +257,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }),
     )
+    // Token guard: bail if the dataset switched while we loaded circuit files,
+    // so a stale membership index doesn't overwrite the new dataset's.
+    if (get().currentDatasetFile !== token) return
     set({ circuitMembership: index, circuitRepFeatures: repFeatures })
   },
   loadCircuitById: async (id) => {

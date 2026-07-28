@@ -246,6 +246,30 @@ export const CIRCUIT_NODES = {
   selectedOpacity: 1.0,
 } as const
 
+// ── Traced (Attribution-Graph) Circuits ─────────────────────────────
+// Roles in traced circuits are open-ended strings, not the legacy
+// source/intermediate/sink taxonomy. Legacy roles keep their exact COLORS
+// values (so gpt2 renders pixel-identical); any NEW role string is assigned a
+// color from these palettes by lexicographic index. See utils/circuitRoles.ts.
+export const TRACED_CIRCUITS = {
+  /** Color palette for non-legacy roles (2D / CSS hex). 10 distinct hues. */
+  rolePalette: [
+    '#8b5cf6', '#f472b6', '#38bdf8', '#fb923c', '#a3e635',
+    '#2dd4bf', '#facc15', '#fb7185', '#c084fc', '#4ade80',
+  ] as readonly string[],
+  /** Same palette tuned brighter for additive 3D point rendering. 10 colors. */
+  rolePalette3D: [
+    '#a78bfa', '#f9a8d4', '#7dd3fc', '#fdba74', '#bef264',
+    '#5eead4', '#fde047', '#fda4af', '#d8b4fe', '#86efac',
+  ] as readonly string[],
+  /** Neutral color for the 'unassigned' role (2D / CSS hex). */
+  unassignedColor: '#6b7280',
+  /** Neutral color for the 'unassigned' role (3D). */
+  unassignedColor3D: '#9ca3af',
+  /** Node sizing for non-legacy roles (mirrors CIRCUIT_NODES shape). */
+  node: { baseSize: 4.0, sizeScale: 4.0, minOpacity: 0.5 },
+} as const
+
 // ── Circuit Edges ───────────────────────────────────────────────────
 export const CIRCUIT_EDGES = {
   /** Opacity multiplier for visible edges. */

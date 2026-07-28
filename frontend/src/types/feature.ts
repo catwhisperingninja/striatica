@@ -16,7 +16,7 @@ export interface ClusterData {
 }
 
 export type ColorMode = 'cluster' | 'localDim'
-export type ViewMode = 'pointCloud' | 'circuits' | 'localDim'
+export type ViewMode = 'pointCloud' | 'circuits'
 
 export interface GrowthCurve {
   log_r: number[]    // log(radius) values

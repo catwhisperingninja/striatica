@@ -41,7 +41,7 @@ export default function DebugConsole() {
     const tracked = [
       'selectedIndex', 'viewMode', 'colorMode',
       'edgeThreshold', 'flyKey', 'loading', 'error',
-      'currentDatasetFile',
+      'currentDatasetFile', 'circuitsForDataset',
     ] as const
 
     const unsub = useAppStore.subscribe((state) => {
@@ -93,6 +93,14 @@ export default function DebugConsole() {
         prevState.current.circuitManifest = manifest
       }
 
+      // Track circuit membership index (re)build (Map reference changes each build)
+      const membership = state.circuitMembership
+      const prevMembership = prevState.current.circuitMembership as Map<number, string[]> | undefined
+      if (membership !== prevMembership) {
+        pushLog(`membership: ${prevMembership === undefined ? '(init)' : String(prevMembership.size)} → ${membership.size}`)
+        prevState.current.circuitMembership = membership
+      }
+
       // Track circuit data selection changes
       const circuit = state.circuitData
       const prevCircuit = prevState.current.circuitData as { name?: string } | null | undefined
@@ -126,6 +134,8 @@ export default function DebugConsole() {
   const dataset = useAppStore((s) => s.dataset)
   const circuitData = useAppStore((s) => s.circuitData)
   const circuitManifest = useAppStore((s) => s.circuitManifest)
+  const circuitMembership = useAppStore((s) => s.circuitMembership)
+  const circuitsForDataset = useAppStore((s) => s.circuitsForDataset)
   const loading = useAppStore((s) => s.loading)
   const error = useAppStore((s) => s.error)
   const currentDatasetFile = useAppStore((s) => s.currentDatasetFile)
@@ -160,6 +170,8 @@ export default function DebugConsole() {
       `error: ${error ?? 'null'}`,
       `points: ${dataset?.numFeatures.toLocaleString() ?? '0'}`,
       `manifest: ${circuitManifest ? `${circuitManifest.circuits.length} circuits` : 'null'}`,
+      `membership: ${circuitMembership.size}`,
+      `circuits.for: ${circuitsForDataset ?? 'null'}`,
       `circuit: ${circuitData ? `${circuitData.name} (${circuitData.nodes.length}n)` : 'null'}`,
     ]
     if (selectedFeature) {
@@ -229,7 +241,10 @@ export default function DebugConsole() {
         <Row label="flyTarget" value={flyTarget ? `[${flyTarget.map((v) => v.toFixed(2)).join(', ')}]` : 'null'} />
         <Row label="edgeThreshold" value={edgeThreshold.toFixed(2)} />
         <Row label="manifest" value={circuitManifest ? `${circuitManifest.circuits.length} circuits` : 'null'} />
+        <Row label="membership" value={String(circuitMembership.size)} />
+        <Row label="circuits.for" value={circuitsForDataset ?? 'null'} />
         <Row label="circuit" value={circuitData ? `${circuitData.name} (${circuitData.nodes.length}n)` : 'null'} highlight={!!circuitData} />
+        <Row label="circuit.src" value={circuitData?.metadata ? ([circuitData.metadata.sourceSet, circuitData.metadata.slug].filter(Boolean).join(' · ') || 'null') : 'null'} />
         <Row label="error" value={error ?? 'null'} highlight={!!error} highlightColor="text-red-400" />
         <Row label="camera" value={camPosStr} />
         {selectedFeature && (

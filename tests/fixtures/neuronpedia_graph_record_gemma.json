@@ -1,0 +1,7 @@
+{
+ "modelId": "gemma-2-2b",
+ "sourceSetName": "gemmascope-transcoder-16k",
+ "slug": "gemma-fact-dallas-austin",
+ "isFeatured": true,
+ "url": "https://example.invalid/user-graphs/test/gemma-fact-dallas-austin.json"
+}

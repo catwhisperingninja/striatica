@@ -1,0 +1,27 @@
+{
+ "modelId": "gemma-2-2b",
+ "name": "gemmascope-transcoder-16k",
+ "description": "Per Layer Transcoders",
+ "creatorName": "Google DeepMind",
+ "releaseName": "gemma-scope",
+ "sources": [
+  {
+   "id": "10-gemmascope-transcoder-16k",
+   "saelensSaeId": "layer_10/width_16k/average_l0_88",
+   "hfRepoId": "google/gemma-scope-2b-pt-transcoders",
+   "hfFolderId": "layer_10/width_16k/average_l0_88"
+  },
+  {
+   "id": "12-gemmascope-transcoder-16k",
+   "saelensSaeId": "layer_12/width_16k/average_l0_6",
+   "hfRepoId": "google/gemma-scope-2b-pt-transcoders",
+   "hfFolderId": "layer_12/width_16k/average_l0_6"
+  },
+  {
+   "id": "20-gemmascope-transcoder-16k",
+   "saelensSaeId": "layer_20/width_16k/average_l0_11",
+   "hfRepoId": "google/gemma-scope-2b-pt-transcoders",
+   "hfFolderId": "layer_20/width_16k/average_l0_11"
+  }
+ ]
+}

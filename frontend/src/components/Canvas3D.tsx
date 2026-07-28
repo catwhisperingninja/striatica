@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useAppStore } from '../stores/useAppStore'
-import { loadDataset, loadCircuitManifest, listDatasets } from '../utils/dataLoader'
+import { loadDataset, listDatasets } from '../utils/dataLoader'
 import { CAMERA, DATASET } from '../config/rendering'
 import PointCloudView from '../views/PointCloudView'
 import CircuitGraphView from '../views/CircuitGraphView'
@@ -15,8 +15,7 @@ export default function Canvas3D() {
   const setDataset = useAppStore((s) => s.setDataset)
   const setLoading = useAppStore((s) => s.setLoading)
   const setError = useAppStore((s) => s.setError)
-  const setCircuitManifest = useAppStore((s) => s.setCircuitManifest)
-  const buildCircuitMembership = useAppStore((s) => s.buildCircuitMembership)
+  const loadCircuitsForDataset = useAppStore((s) => s.loadCircuitsForDataset)
   const setAvailableDatasets = useAppStore((s) => s.setAvailableDatasets)
   const dataset = useAppStore((s) => s.dataset)
   const viewMode = useAppStore((s) => s.viewMode)
@@ -38,23 +37,15 @@ export default function Canvas3D() {
       const match = entries.find((e) => e.file === targetFile) ?? entries[0]
       const fileToLoad = match?.file ?? targetFile
       useAppStore.setState({ currentDatasetFile: fileToLoad })
+      // Load this dataset's circuits in parallel. Circuits are namespaced per
+      // dataset now, so the loader resolves to an empty manifest for datasets
+      // without any (no more model-specific gating here).
+      void loadCircuitsForDataset(fileToLoad)
       return loadDataset(`/data/${fileToLoad}`)
     })
       .then(setDataset)
       .catch((e: Error) => setError(e.message))
-
-    // Only load GPT-2 circuits when viewing GPT-2 data — circuit feature indices
-    // are model-specific and would display wrong labels on other datasets
-    const isGpt2 = targetFile.startsWith('gpt2-small')
-    if (isGpt2) {
-      loadCircuitManifest()
-        .then((manifest) => {
-          setCircuitManifest(manifest)
-          buildCircuitMembership()
-        })
-        .catch((e: Error) => console.warn('Circuit manifest load failed:', e.message))
-    }
-  }, [setDataset, setLoading, setError, setCircuitManifest, buildCircuitMembership, setAvailableDatasets])
+  }, [setDataset, setLoading, setError, loadCircuitsForDataset, setAvailableDatasets])
 
   return (
     <Canvas
