@@ -437,8 +437,11 @@ When building the Local Dimension view (or any new view):
 ## ViewMode Type
 
 `ViewMode` is defined in `frontend/src/types/feature.ts` as
-`'pointCloud' | 'circuits' | 'localDim'`. The `'localDim'` value already exists
-in the type but has no corresponding view component yet.
+`'pointCloud' | 'circuits'`. The dangling `'localDim'` view value (which never
+had a corresponding view component) was removed in the Lane 2 Phase 0 sprint
+along with the disabled "Local Dim" tab in `TopBar.tsx`. Note this is distinct
+from `ColorMode = 'cluster' | 'localDim'`, whose `'localDim'` value is live
+(local-intrinsic-dimension coloring) and unaffected.
 
 ## API Keys & Secrets
 
