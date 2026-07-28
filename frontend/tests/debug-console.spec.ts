@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test'
 test.describe('Debug console', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
-    await expect(page.locator('text=/\\d+.*points/')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('text=/Points:\\s*[\\d,]+/')).toBeVisible({ timeout: 10000 })
   })
 
   test('toggles open/closed with backtick key', async ({ page }) => {
@@ -35,6 +35,10 @@ test.describe('Debug console', () => {
   })
 
   test('copy button works', async ({ page }) => {
+    // handleCopy calls navigator.clipboard.writeText(); headless Chromium blocks
+    // clipboard by default, so the .then() that shows "Copied!" never runs.
+    // Grant write access so the real behavior is observable (app never reads).
+    await page.context().grantPermissions(['clipboard-write'])
     const copyBtn = page.locator('text=Copy')
     await expect(copyBtn).toBeVisible()
     await copyBtn.click()
@@ -42,9 +46,10 @@ test.describe('Debug console', () => {
   })
 
   test('clear button empties log', async ({ page }) => {
-    // Generate some log entries
-    await page.locator('text=Circuits').click()
-    await page.locator('text=Point Cloud').click()
+    // Generate some log entries ("Circuits" text also appears in the debug
+    // console, so target the TopBar view button specifically).
+    await page.getByRole('button', { name: 'Circuits', exact: true }).click()
+    await page.getByRole('button', { name: 'Point Cloud' }).click()
 
     // Clear the log
     const clearBtn = page.locator('text=Clear')
