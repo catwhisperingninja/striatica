@@ -70,13 +70,13 @@ test.describe('Circuit view interactions', () => {
 
     // Debug console defaults open (useState(true)) — no backtick press needed.
 
-    // Click a node in the node list (look for activation values like "0.85")
+    // Click a node in the node list (look for activation values like "0.85").
+    // A loaded circuit MUST render nodes — an empty node list is a rendering
+    // regression, so assert rather than skip. Wait for the first node (count()
+    // does not auto-wait) before asserting the count is non-zero.
     const nodeItem = page.locator('text=/^0\\.\\d{2}\\s/')
-    const nodeCount = await nodeItem.count()
-    if (nodeCount === 0) {
-      test.skip()
-      return
-    }
+    await expect(nodeItem.first()).toBeVisible({ timeout: 5000 })
+    expect(await nodeItem.count()).toBeGreaterThan(0)
     await nodeItem.first().click()
 
     // selectedIndex should be non-null and flyTarget should be set (.first()

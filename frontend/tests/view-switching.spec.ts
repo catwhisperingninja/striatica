@@ -24,6 +24,17 @@ test.describe('View mode switching', () => {
   test('can switch back to Point Cloud', async ({ page }) => {
     await page.getByRole('button', { name: 'Circuits', exact: true }).click()
     await page.getByRole('button', { name: 'Point Cloud' }).click()
-    await expect(page.locator('text=/viewMode.*pointCloud/').first()).toBeVisible({ timeout: 2000 })
+    // Assert the STATE-PANEL viewMode row, not the transition log. The log entry
+    // "viewMode: pointCloud → circuits" also matches /viewMode.*pointCloud/, so the
+    // old .first() regex passed even if the switch-back did nothing. The state row's
+    // label span has exact text "viewMode" (the log message never does), so this
+    // filter selects that single row. "pointCloud" and "circuits" share no substring
+    // and neither is a substring of the label, so the row can satisfy exactly one
+    // value — asserting both present-new and absent-old couples the test to the click.
+    const viewModeRow = page
+      .locator('div.justify-between')
+      .filter({ has: page.getByText('viewMode', { exact: true }) })
+    await expect(viewModeRow).toContainText('pointCloud', { timeout: 2000 })
+    await expect(viewModeRow).not.toContainText('circuits')
   })
 })

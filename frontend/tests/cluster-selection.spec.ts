@@ -23,11 +23,12 @@ test.describe('Cluster selection', () => {
 
   test('shift-click selects multiple clusters', async ({ page }) => {
     const clusters = page.locator('text=/Cluster \\d+/')
+    // beforeEach guarantees cluster rows exist; the NavPanel always renders many
+    // (probe: 51). Fewer than 2 is a rendering regression, so assert rather than
+    // skip. Wait for the 2nd row first (count() does not auto-wait).
+    await expect(clusters.nth(1)).toBeVisible({ timeout: 5000 })
     const count = await clusters.count()
-    if (count < 2) {
-      test.skip()
-      return
-    }
+    expect(count).toBeGreaterThanOrEqual(2)
 
     await clusters.nth(0).click()
     await clusters.nth(1).click({ modifiers: ['Shift'] })
@@ -42,11 +43,12 @@ test.describe('Cluster selection', () => {
 
   test('clicking without shift replaces selection', async ({ page }) => {
     const clusters = page.locator('text=/Cluster \\d+/')
+    // beforeEach guarantees cluster rows exist; the NavPanel always renders many
+    // (probe: 51). Fewer than 2 is a rendering regression, so assert rather than
+    // skip. Wait for the 2nd row first (count() does not auto-wait).
+    await expect(clusters.nth(1)).toBeVisible({ timeout: 5000 })
     const count = await clusters.count()
-    if (count < 2) {
-      test.skip()
-      return
-    }
+    expect(count).toBeGreaterThanOrEqual(2)
 
     await clusters.nth(0).click()
     await clusters.nth(1).click() // no shift — should replace, not add
