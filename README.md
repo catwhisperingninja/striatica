@@ -120,9 +120,10 @@ including alignment, honesty, refusal, and safety features. Treat them as dual-u
 
 **The pipeline redacts semantic labels by default.** They are included only for
 public-tier models — those whose interpretability data is already openly published:
-**GPT-2 Small and Pythia-70M**. Every other model (including Gemma-2-2B transcoders)
-outputs geometry only — positions, clusters, local dimensions, and activation stats.
-The `--include-semantics` flag overrides this for authorized research.
+**GPT-2 Small, Pythia-70M, and Gemma-2-2B** (Gemma Scope is Google DeepMind's open
+interpretability release; Neuronpedia hosts its full explanations publicly). Every
+other model outputs geometry only — positions, clusters, local dimensions, and
+activation stats. The `--include-semantics` flag overrides this for authorized research.
 
 - Never commit labels to version control, bake them into Docker images, or log them.
 - Audit all outputs and screenshots for exposed semantic data before sharing.
