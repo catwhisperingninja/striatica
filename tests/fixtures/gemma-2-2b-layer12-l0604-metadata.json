@@ -1,0 +1,17 @@
+{
+  "model_id": "gemma-2-2b",
+  "layer": "layer12-l0604",
+  "pipeline_mode": "transcoder",
+  "num_features": 16384,
+  "vector_dim": 2304,
+  "processing_time_seconds": 883,
+  "pipeline_version": "0.3.0",
+  "device": "cuda",
+  "redact_semantics": false,
+  "timestamp": "2026-04-27T09:58:37.278056+00:00",
+  "transcoder": {
+    "repo_id": "google/gemma-scope-2b-pt-transcoders",
+    "width": "width_16k",
+    "l0_variant": 604
+  }
+}

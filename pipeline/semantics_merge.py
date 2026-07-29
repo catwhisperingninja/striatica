@@ -50,6 +50,15 @@ _IRON_RULE_KEYS = ("positions", "clusterLabels", "localDimensions", "growthCurve
 # does not match is assumed to already be a Neuronpedia source/layer id.
 _TRANSCODER_LAYER_RE = re.compile(r"^layer(\d+)-l0(\d+)$")
 
+# The l0 dictionary Neuronpedia has DEPLOYED per source id — the dictionary its
+# published explanations are indexed by. The gemma-2-2b layer-12
+# gemmascope-transcoder-16k source is average_l0_6, while local datasets were
+# built from average_l0_604 (a DIFFERENT dictionary — see CLAUDE.md /
+# graph_fetch identity). Merging l0_6-indexed labels positionally onto l0_604
+# features silently mislabels them, so a mismatch is refused. A source id absent
+# from this map is unrecognized -> the guard stays dormant (safe no-op).
+_DEPLOYED_L0_VARIANTS = {"12-gemmascope-transcoder-16k": 6}
+
 
 def neuronpedia_layer_id(layer: str) -> str:
     """Map a dataset "layer" string to its Neuronpedia source/layer id.
@@ -94,10 +103,42 @@ def _load_explanations(explanations_jsonl_path: Path, num_features: int) -> dict
     return explanations
 
 
+def _check_l0_variant(dataset_json_path: Path, data: dict) -> None:
+    """Sidecar-gated L0-dictionary guard (raises ValueError on a mismatch).
+
+    Engages ONLY when a ``{stem}-metadata.json`` sidecar is discoverable next to
+    the dataset AND its ``transcoder.l0_variant`` differs from the DEPLOYED
+    Neuronpedia dictionary (``_DEPLOYED_L0_VARIANTS`` keyed by the dataset's
+    Neuronpedia source id). No sidecar, no recorded variant, or an unrecognized
+    source id -> no-op: a dataset we cannot identify is merged unchanged.
+    """
+    sidecar = dataset_json_path.parent / f"{dataset_json_path.stem}-metadata.json"
+    if not sidecar.exists():
+        return
+    meta = json.loads(sidecar.read_text())
+    dataset_l0 = meta.get("transcoder", {}).get("l0_variant")
+    if dataset_l0 is None:
+        return
+    np_layer_id = neuronpedia_layer_id(data.get("layer", ""))
+    deployed_l0 = _DEPLOYED_L0_VARIANTS.get(np_layer_id)
+    if deployed_l0 is None:
+        return
+    if int(dataset_l0) != int(deployed_l0):
+        raise ValueError(
+            f"Refusing to merge semantics: this dataset was built from the "
+            f"average_l0_{dataset_l0} transcoder dictionary, but Neuronpedia's "
+            f"deployed '{np_layer_id}' source is average_l0_{deployed_l0} — "
+            f"different dictionaries whose feature indices are not comparable, "
+            f"so positional merging would mislabel features. Pass "
+            f"allow_l0_mismatch=True (CLI: --allow-l0-mismatch) to override."
+        )
+
+
 def merge_explanations(
     dataset_json_path: str | Path,
     explanations_jsonl_path: str | Path,
     out_path: str | Path | None = None,
+    allow_l0_mismatch: bool = False,
 ) -> dict:
     """Patch features[].explanation in an existing dataset JSON from a JSONL.
 
@@ -106,12 +147,15 @@ def merge_explanations(
         explanations_jsonl_path: Neuronpedia explanations JSONL (S3 line shape).
         out_path: Destination. None overwrites dataset_json_path in place;
             otherwise the source file's bytes are left untouched.
+        allow_l0_mismatch: Skip the sidecar-gated L0-dictionary guard (see
+            _check_l0_variant) and merge anyway.
 
     Returns:
         The merged dataset dict (identical to what was written to disk).
 
     Raises:
-        ValueError: if the dataset's model is not public tier — writes NOTHING.
+        ValueError: if the dataset's model is not public tier, or if the L0
+            dictionary guard trips — writes NOTHING in either case.
         FileNotFoundError: if the explanations JSONL is missing — writes NOTHING.
 
     IRON RULE: positions, clusterLabels, localDimensions, growthCurves and
@@ -132,6 +176,11 @@ def merge_explanations(
             f"Refusing to merge semantics: model '{model}' is not public tier. "
             "Semantic labels are only merged for public-tier models."
         )
+
+    # L0-dictionary guard (sidecar-gated) — refuse mismatched dictionaries so
+    # l0_6-indexed Neuronpedia labels are never merged onto l0_604 features.
+    if not allow_l0_mismatch:
+        _check_l0_variant(dataset_json_path, data)
 
     if not explanations_jsonl_path.exists():
         raise FileNotFoundError(f"Explanations JSONL not found: {explanations_jsonl_path}")
@@ -176,6 +225,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Fetch explanations from Neuronpedia S3 into EXPLANATIONS first "
              "(model + layer derived from the dataset), then merge.",
     )
+    parser.add_argument(
+        "--allow-l0-mismatch",
+        action="store_true",
+        help="Merge even when the dataset's transcoder l0 dictionary differs "
+             "from Neuronpedia's deployed source (indices may not be "
+             "comparable). Mirrors circuits --traced.",
+    )
     return parser
 
 
@@ -215,7 +271,12 @@ def main(argv: list[str] | None = None) -> int:
                 output_path=explanations_path,
             )
 
-        merge_explanations(dataset_path, explanations_path, out_path=out_path)
+        merge_explanations(
+            dataset_path,
+            explanations_path,
+            out_path=out_path,
+            allow_l0_mismatch=args.allow_l0_mismatch,
+        )
     except FileNotFoundError as e:
         error(str(e))
         return 1

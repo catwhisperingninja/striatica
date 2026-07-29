@@ -36,6 +36,7 @@ import re
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pipeline.banner import detail, step_cached, warn
 from pipeline.config import DATA_DIR, PROJECT_ROOT
@@ -47,6 +48,15 @@ except ImportError:  # pragma: no cover - depends on environment
 
 NEURONPEDIA_BASE = "https://www.neuronpedia.org"
 GRAPHS_CACHE_DIR = DATA_DIR / "graphs"
+
+# SSRF/LFI allow-list for the S3 payload URL carried in a graph record. Only
+# https on one of these hosts may be fetched — a poisoned record["url"]
+# (file://, http://, or an attacker host) is refused before any access.
+ALLOWED_URL_HOSTS = {
+    "www.neuronpedia.org",
+    "neuronpedia.org",
+    "neuronpedia-attrib.s3.us-east-1.amazonaws.com",
+}
 
 # The only source-set family whose graphs are comparable to the local
 # gemma-scope transcoder datasets.
@@ -107,6 +117,37 @@ def _get_json(url: str, timeout: int = 30) -> dict:
     return json.loads(payload.decode("utf-8"))
 
 
+def _reject_unsafe_path_component(value: str, field: str) -> None:
+    """Reject a model_id/slug that could escape the cache dir or poison the URL.
+
+    ``fetch_graph`` builds {cache_dir}/{model_id}/{slug}.json and the request
+    URL from these API-derived strings, so a path separator or a ``..`` segment
+    would let a hostile record traverse the filesystem or redirect the fetch.
+    """
+    if "/" in value or "\\" in value or os.sep in value or ".." in value:
+        raise ValueError(
+            f"Unsafe {field} {value!r}: must not contain a path separator "
+            f"('/', '\\\\') or a '..' segment — it names a cache path and "
+            f"request URL."
+        )
+
+
+def _validate_payload_url(url: str) -> None:
+    """SSRF/LFI guard on the S3 payload URL from a graph record.
+
+    Only https URLs whose host is on ``ALLOWED_URL_HOSTS`` may be fetched. A
+    poisoned record["url"] (file:// LFI, plaintext http://, or an attacker
+    host) is refused here — before any network or filesystem access.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname not in ALLOWED_URL_HOSTS:
+        raise ValueError(
+            f"Refusing to fetch graph payload from disallowed URL {url!r}: "
+            f"only https on an allow-listed host "
+            f"({', '.join(sorted(ALLOWED_URL_HOSTS))}) is permitted."
+        )
+
+
 # ── Public graph fetching (keyless) ─────────────────────────────────
 
 
@@ -145,6 +186,11 @@ def fetch_graph(
     zero network calls unless force=True. A malformed network payload raises
     and is never written to the cache.
     """
+    # Entry guard: reject traversal/separator inputs BEFORE any cache read/write
+    # or network call — these strings name both a filesystem path and a URL.
+    _reject_unsafe_path_component(model_id, "model_id")
+    _reject_unsafe_path_component(slug, "slug")
+
     cache_file = Path(cache_dir) / model_id / f"{slug}.json"
     if cache_file.is_file() and not force:
         step_cached(f"{model_id}/{slug}.json")
@@ -157,6 +203,9 @@ def fetch_graph(
             f"Graph record for '{slug}' has no 'url' field — cannot fetch "
             f"the full graph payload."
         )
+
+    # SSRF/LFI guard: only https on an allow-listed host may be fetched.
+    _validate_payload_url(s3_url)
 
     try:
         graph = _get_json(s3_url)
@@ -267,8 +316,15 @@ def validate_graph_identity(
     source_set: dict,
     dataset_metadata: dict,
     allow_l0_mismatch: bool = False,
+    layer: int | None = None,
 ) -> dict:
     """Validate that a Neuronpedia graph and a local dataset share identity.
+
+    Args:
+        layer: The transformer layer whose feature nodes the caller keeps. The
+            per-layer L0 source lookup uses THIS layer so the check is honest
+            for the filtered layer. ``None`` (the default, e.g. for standalone
+            callers) falls back to the layer parsed from the dataset metadata.
 
     Checks (all hard ValueError on failure):
       - model: record["modelId"] and graph["metadata"]["scan"] must both match
@@ -327,7 +383,10 @@ def validate_graph_identity(
             f"{REQUIRED_NUM_FEATURES}."
         )
 
-    layer = _dataset_layer(dataset_metadata)
+    if layer is None:
+        layer = _dataset_layer(dataset_metadata)
+    else:
+        layer = int(layer)
     dataset_l0 = int(dataset_metadata["transcoder"]["l0_variant"])
 
     neuronpedia_l0: int | None = None

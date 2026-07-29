@@ -124,9 +124,9 @@ def _load_fixture(filename: str) -> dict:
 _RAW_GRAPH = _load_fixture("neuronpedia_graph_gemma.json")
 _RECORD = _load_fixture("neuronpedia_graph_record_gemma.json")
 _SOURCE_SET = _load_fixture("neuronpedia_sourceset_gemma.json")
-_DATASET_METADATA = json.loads(
-    (REAL_DATA / "gemma-2-2b-layer12-l0604-metadata.json").read_text()
-)
+# Dataset metadata from the COMMITTED fixture (byte copy of the real l0604
+# sidecar) so this module collects on clean clones without local data files.
+_DATASET_METADATA = _load_fixture("gemma-2-2b-layer12-l0604-metadata.json")
 
 
 # ---------------------------------------------------------------------------

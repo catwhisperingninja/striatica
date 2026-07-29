@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -74,12 +75,19 @@ from pipeline.semantics_merge import main, merge_explanations, neuronpedia_layer
 REPO_ROOT = Path(__file__).parent.parent
 REAL_DATA = REPO_ROOT / "frontend" / "public" / "data"
 DATASET_FILE = REAL_DATA / "gemma-2-2b-layer12-l0604.json"
+# The dataset's metadata sidecar, by the {stem}-metadata.json convention.
+METADATA_SIDECAR = REAL_DATA / "gemma-2-2b-layer12-l0604-metadata.json"
 
 MODEL = "gemma-2-2b"
 LAYER = "layer12-l0604"
 NP_LAYER_ID = "12-gemmascope-transcoder-16k"
 NUM_FEATURES = 16384
 NONEMPTY_EXPLANATIONS_BEFORE = 7582  # real file state, produced 2026-04-27
+# The dataset was built from the average_l0_604 transcoder dictionary; the
+# Neuronpedia layer-12 gemmascope-transcoder-16k source is DEPLOYED at
+# average_l0_6 — a different dictionary (see CLAUDE.md / graph_fetch identity).
+DATASET_L0_VARIANT = 604
+DEPLOYED_L0_VARIANT = 6
 
 # Subtrees the merge must NEVER alter (IRON RULE).
 IRON_RULE_KEYS = ("positions", "clusterLabels", "localDimensions", "growthCurves", "clusters")
@@ -428,3 +436,88 @@ class TestMainCLI:
         with open(out) as f:
             on_disk = json.load(f)
         assert on_disk["features"][0]["explanation"] == "label-0"
+
+
+# ---------------------------------------------------------------------------
+# L0-variant guard (RED until implemented)
+#
+# The real dataset was built from the average_l0_604 transcoder dictionary
+# (metadata sidecar transcoder.l0_variant == 604), but Neuronpedia's DEPLOYED
+# layer-12 gemmascope-transcoder-16k source is average_l0_6. Those are DIFFERENT
+# dictionaries whose feature indices are not comparable — merging l0_6-indexed
+# Neuronpedia explanations positionally onto l0_604 features silently mislabels
+# them. The same hazard graph_fetch.validate_graph_identity hard-fails on.
+#
+# INTENDED CONTRACT (behavior, not plumbing):
+#   - The guard engages ONLY when a metadata sidecar is discoverable next to the
+#     dataset (the {stem}-metadata.json convention) AND its transcoder.l0_variant
+#     mismatches the deployed variant. When no sidecar is present the merge must
+#     proceed unchanged — the existing TestMergeExplanations / TestMainCLI cases
+#     seed only the dataset and MUST stay green.
+#   - The deployed variant (6 for gemma-2-2b layer-12 gemmascope-transcoder-16k)
+#     is the documented reference the sidecar's 604 is checked against; how the
+#     implementation sources it is its choice.
+#   - On mismatch: refuse with an actionable ValueError naming BOTH variants
+#     (604 and 6) and write nothing.
+#   - An explicit override lets a caller proceed anyway. Anticipated flag name
+#     `allow_l0_mismatch` (mirrors build_traced_circuit /
+#     validate_graph_identity / the CLI's --allow-l0-mismatch vocabulary); the
+#     override test below pins that name and will need reconciling if the
+#     implementer chooses a different one.
+# ---------------------------------------------------------------------------
+
+
+class TestL0VariantGuard:
+    pytestmark = pytest.mark.skipif(
+        not METADATA_SIDECAR.exists(),
+        reason="real metadata sidecar gemma-2-2b-layer12-l0604-metadata.json not present",
+    )
+
+    def _seed_dataset_with_sidecar(self, tmp_path: Path):
+        dataset = tmp_path / DATASET_FILE.name
+        shutil.copyfile(DATASET_FILE, dataset)
+        sidecar = tmp_path / f"{DATASET_FILE.stem}-metadata.json"
+        shutil.copyfile(METADATA_SIDECAR, sidecar)
+        return dataset, sidecar
+
+    def test_sidecar_precondition(self, tmp_path):
+        _dataset, sidecar = self._seed_dataset_with_sidecar(tmp_path)
+        meta = json.loads(sidecar.read_text())
+        assert meta["transcoder"]["l0_variant"] == DATASET_L0_VARIANT
+
+    def test_l0_mismatch_refuses_naming_both_variants(
+        self, explanations_jsonl, tmp_path
+    ):
+        dataset, _sidecar = self._seed_dataset_with_sidecar(tmp_path)
+        src_hash = _sha256(dataset)
+        with pytest.raises(ValueError) as excinfo:
+            merge_explanations(dataset, explanations_jsonl)
+        msg = str(excinfo.value)
+        # Must quote both sides: the dataset's 604 ...
+        assert str(DATASET_L0_VARIANT) in msg
+        # ... and the deployed 6 as a standalone number (not the 6 inside 604,
+        # 16k, or 16384).
+        assert re.search(r"(?<!\d)6(?!\d)", msg), msg
+        # A refusal writes nothing — the in-place source is untouched.
+        assert _sha256(dataset) == src_hash
+
+    def test_l0_mismatch_allowed_with_override(
+        self, explanations_jsonl, tmp_path
+    ):
+        dataset, _sidecar = self._seed_dataset_with_sidecar(tmp_path)
+        out = tmp_path / "merged.json"
+        result = merge_explanations(
+            dataset, explanations_jsonl, out_path=out, allow_l0_mismatch=True
+        )
+        assert out.exists()
+        assert result["features"][0]["explanation"] == "label-0"
+
+    def test_no_sidecar_still_merges(self, explanations_jsonl, tmp_path):
+        """Backward-compat: absent a sidecar, the merge proceeds unchanged (the
+        guard must not fire on a dataset it cannot identify)."""
+        dataset = tmp_path / DATASET_FILE.name
+        shutil.copyfile(DATASET_FILE, dataset)
+        out = tmp_path / "merged.json"
+        result = merge_explanations(dataset, explanations_jsonl, out_path=out)
+        assert out.exists()
+        assert result["features"][0]["explanation"] == "label-0"

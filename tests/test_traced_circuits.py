@@ -62,6 +62,7 @@ Contract details these tests pin:
 import copy
 import inspect
 import json
+import re
 import sys
 import types
 from pathlib import Path
@@ -80,13 +81,11 @@ _RAW_GRAPH = _load_fixture("neuronpedia_graph_gemma.json")
 _RECORD = _load_fixture("neuronpedia_graph_record_gemma.json")
 _SOURCE_SET = _load_fixture("neuronpedia_sourceset_gemma.json")
 
-_DATASET_METADATA_PATH = (
-    Path(__file__).parent.parent
-    / "frontend"
-    / "public"
-    / "data"
-    / "gemma-2-2b-layer12-l0604-metadata.json"
-)
+# Dataset metadata is loaded from the COMMITTED fixture (a byte copy of the real
+# frontend/public/data/gemma-2-2b-layer12-l0604-metadata.json, verified
+# label-free) so clean clones and the WSL2 box can collect this module without
+# any local frontend/public/data files present.
+_DATASET_METADATA_PATH = FIXTURES / "gemma-2-2b-layer12-l0604-metadata.json"
 _DATASET_METADATA = json.loads(_DATASET_METADATA_PATH.read_text())
 
 # ---------------------------------------------------------------------------
@@ -565,6 +564,95 @@ def test_identity_validator_failure_propagates(
         build_traced_circuit(
             raw_graph, record, source_set, dataset_metadata,
             layer=12, allow_l0_mismatch=False,
+        )
+
+
+# ---------------------------------------------------------------------------
+# UNMOCKED identity integration (real pipeline.graph_fetch.validate_graph_identity)
+#
+# Every other test in this file stubs the validator. These do NOT: they exercise
+# the real build_traced_circuit -> validate_graph_identity seam end to end.
+#
+# CURRENTLY RED (this is the point): build_traced_circuit calls the validator
+# with a `layer=` keyword (traced_circuits.py: `validate_graph_identity(...,
+# layer=layer, ...)`) but the real graph_fetch.validate_graph_identity signature
+# is (record, graph, source_set, dataset_metadata, allow_l0_mismatch=False) —
+# it has no `layer` parameter, so the call raises
+#   TypeError: validate_graph_identity() got an unexpected keyword argument 'layer'
+# BEFORE any identity logic runs.
+#
+# INTENDED CONTRACT (implementer reconciles the seam; test behavior, not the
+# exact signature): the validator must check the SAME layer whose feature nodes
+# the circuit keeps (layer 12 here). Once reconciled:
+#   - metadata matching the layer-12 deployed dictionary (average_l0_6) passes
+#     identity and build returns a schema-valid, scrub-clean circuit;
+#   - the real l0_604 dataset contradicts the layer-12 average_l0_6 source and
+#     build re-raises the validator's hard ValueError quoting BOTH l0 variants.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def l0_6_dataset_metadata():
+    """Real dataset metadata retargeted to the layer-12 average_l0_6 dictionary.
+
+    The committed sidecar is l0_604; only the transcoder l0_variant (and the
+    cosmetic layer string) are changed to 6 so the fixture source set's
+    layer_12/width_16k/average_l0_6 entry VERIFIES against it. Everything else
+    (model_id, width, num_features) is the real dataset.
+    """
+    md = copy.deepcopy(_DATASET_METADATA)
+    md["layer"] = "layer12-l06"
+    md["transcoder"]["l0_variant"] = 6
+    return md
+
+
+def test_unmocked_identity_happy_path_returns_schema_valid_circuit(
+    raw_graph, record, source_set, l0_6_dataset_metadata
+):
+    # No monkeypatching: the real validator runs. With l0-matching metadata it
+    # must pass, and build must return a clean frozen-schema circuit.
+    circuit = build_traced_circuit(
+        raw_graph, record, source_set, l0_6_dataset_metadata,
+        layer=12, allow_l0_mismatch=False,
+    )
+    assert isinstance(circuit, dict)
+    # Schema-valid: the leak/shape barrier accepts it.
+    assert scrub_check(circuit) is None
+    assert set(circuit.keys()) == TOP_LEVEL_KEYS
+    assert circuit["type"] == "traced"
+    assert circuit["source"] == "neuronpedia"
+    assert circuit["edges"] == []
+    assert {n["featureIndex"] for n in circuit["nodes"]} == L12_LOCALS
+    md = circuit["metadata"]
+    assert md["l0"] == 6
+    assert md["l0Verified"] is True
+
+
+def test_unmocked_identity_l0_604_contradiction_hard_fails_quoting_both(
+    raw_graph, record, source_set, dataset_metadata
+):
+    # dataset_metadata is the real l0_604 sidecar; the fixture source set's
+    # layer-12 dictionary is average_l0_6. Real validator -> hard ValueError.
+    with pytest.raises(ValueError) as excinfo:
+        build_traced_circuit(
+            raw_graph, record, source_set, dataset_metadata,
+            layer=12, allow_l0_mismatch=False,
+        )
+    msg = str(excinfo.value)
+    assert "604" in msg
+    # Neuronpedia's 6 as a standalone number (not the 6 in 604/16k/16384).
+    assert re.search(r"(?<!\d)6(?!\d)", msg), msg
+
+
+def test_unmocked_identity_contradiction_not_rescued_by_allow_flag(
+    raw_graph, record, source_set, dataset_metadata
+):
+    # A proven l0 contradiction is never overridable — allow_l0_mismatch only
+    # covers the unverifiable case.
+    with pytest.raises(ValueError):
+        build_traced_circuit(
+            raw_graph, record, source_set, dataset_metadata,
+            layer=12, allow_l0_mismatch=True,
         )
 
 

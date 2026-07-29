@@ -94,7 +94,11 @@ from pipeline.config import DATA_DIR
 TESTS_DIR = Path(__file__).resolve().parent
 FIXTURES_DIR = TESTS_DIR / "fixtures"
 PROJECT_ROOT = TESTS_DIR.parent
-DATASET_METADATA_PATH = (
+# Hermetic tests read the COMMITTED fixture copy (byte-identical to the real
+# sidecar, verified label-free) so this module collects on clean clones. The
+# slow LIVE test below deliberately uses the REAL on-disk sidecar instead.
+DATASET_METADATA_PATH = FIXTURES_DIR / "gemma-2-2b-layer12-l0604-metadata.json"
+REAL_DATASET_METADATA_PATH = (
     PROJECT_ROOT / "frontend" / "public" / "data"
     / "gemma-2-2b-layer12-l0604-metadata.json"
 )
@@ -104,9 +108,14 @@ SLUG = "gemma-fact-dallas-austin"
 SOURCE_SET_NAME = "gemmascope-transcoder-16k"
 
 RECORD_URL = f"https://www.neuronpedia.org/api/graph/{MODEL}/{SLUG}"
-# record["url"] in the fixture — deliberately on example.invalid so a bug that
-# escapes the monkeypatch can never fetch anything real.
-S3_URL = "https://example.invalid/user-graphs/test/gemma-fact-dallas-austin.json"
+# record["url"] in the fixture — pinned to the real Neuronpedia S3 host so it
+# passes the graph_fetch SSRF allow-list. The fake transport still intercepts
+# urlopen, so no real network is touched; the record fixture's "url" field is
+# kept byte-identical to this constant (see TestSsrfAllowList reconciliation).
+S3_URL = (
+    "https://neuronpedia-attrib.s3.us-east-1.amazonaws.com/"
+    "user-graphs/test/gemma-fact-dallas-austin.json"
+)
 SOURCE_SET_URL = (
     f"https://www.neuronpedia.org/api/source-set/{MODEL}/{SOURCE_SET_NAME}"
 )
@@ -602,3 +611,140 @@ class TestValidateGraphIdentity:
             )
         msg = str(excinfo.value)
         assert "16384" in msg or "65536" in msg
+
+
+# ---------------------------------------------------------------------------
+# LIVE identity check (real network + real on-disk dataset metadata)
+#
+# The runtime L0-variant check promised by the traced-circuits plan. Marked
+# slow: it hits Neuronpedia. The full graph is served from the on-disk cache at
+# data/graphs/gemma-2-2b/{slug}.json when present, so only the record and
+# source set need the network; if the sandbox blocks outbound requests the test
+# skips instead of reporting a spurious failure. When the network is reachable
+# it asserts the documented HARD failure — the deployed Neuronpedia layer-12
+# transcoder is average_l0_6 while the on-disk dataset is l0_604 (different
+# dictionaries), so validate_graph_identity must raise ValueError quoting both.
+# ---------------------------------------------------------------------------
+
+
+class TestLiveIdentity:
+    @pytest.mark.slow
+    @pytest.mark.skipif(
+        not REAL_DATASET_METADATA_PATH.exists(),
+        reason="real on-disk gemma-2-2b-layer12-l0604-metadata.json not present",
+    )
+    def test_live_fetch_then_identity_hard_fails_l0_604_vs_deployed_6(self):
+        try:
+            record = graph_fetch.fetch_graph_record(MODEL, SLUG)
+            source_set = graph_fetch.fetch_source_set(
+                MODEL, record["sourceSetName"]
+            )
+            graph = graph_fetch.fetch_graph(MODEL, SLUG)  # default cache dir
+        except (urllib.error.URLError, OSError) as e:
+            pytest.skip(f"Neuronpedia network unreachable in this sandbox: {e}")
+
+        dataset_metadata = json.loads(REAL_DATASET_METADATA_PATH.read_text())
+        assert dataset_metadata["transcoder"]["l0_variant"] == 604
+
+        with pytest.raises(ValueError) as excinfo:
+            graph_fetch.validate_graph_identity(
+                record, graph, source_set, dataset_metadata
+            )
+        msg = str(excinfo.value)
+        assert "604" in msg
+        assert re.search(r"(?<!\d)6(?!\d)", msg), msg
+
+
+# ---------------------------------------------------------------------------
+# SSRF allow-list on the S3 payload URL (record["url"])
+#
+# RED until implemented. fetch_graph currently opens record["url"] verbatim via
+# urllib.request.urlopen, so a poisoned graph record can steer the fetch at
+# file:///etc/hosts (LFI), a plaintext http:// origin, or an attacker host
+# (SSRF). The fix must validate the payload URL's scheme (https only) and host
+# against an allow-list (anticipated: graph_fetch.ALLOWED_URL_HOSTS covering
+# www.neuronpedia.org, neuronpedia.org, and
+# neuronpedia-attrib.s3.us-east-1.amazonaws.com) BEFORE any fetch, raising an
+# actionable error and never opening the disallowed URL.
+#
+# NOTE for the implementer: the hermetic fetch_graph tests above deliberately
+# use record["url"] == "https://example.invalid/..." so an escaped monkeypatch
+# cannot reach real infra. That host is NOT on the allow-list, so once the guard
+# lands those fixtures must move to an allowed host (e.g. the real S3 host) —
+# reconcile S3_URL when implementing, that is the intended, not incidental,
+# consequence of adding the allow-list.
+# ---------------------------------------------------------------------------
+
+
+class TestSsrfAllowList:
+    @pytest.mark.parametrize("bad_url", [
+        "file:///etc/hosts",                                    # non-http scheme (LFI)
+        "http://neuronpedia-attrib.s3.us-east-1.amazonaws.com/x.json",  # not https
+        "https://evil.example.com/user-graphs/x.json",         # host off allow-list
+    ])
+    def test_fetch_graph_refuses_disallowed_payload_url(
+        self, monkeypatch, tmp_path, bad_url
+    ):
+        poisoned = _record()
+        poisoned["url"] = bad_url
+        transport = _install(monkeypatch, {
+            RECORD_URL: json.dumps(poisoned).encode("utf-8"),
+        })
+        with pytest.raises((ValueError, RuntimeError)) as excinfo:
+            graph_fetch.fetch_graph(MODEL, SLUG, cache_dir=tmp_path)
+        msg = str(excinfo.value).lower()
+        assert any(
+            w in msg for w in ("host", "url", "scheme", "allow", "https")
+        ), f"error message must name the URL/host/scheme problem: {excinfo.value!r}"
+        # The disallowed URL must never be opened...
+        assert all(c.url != bad_url for c in transport.calls)
+        # ...and nothing is cached from it.
+        assert not (tmp_path / MODEL / f"{SLUG}.json").exists()
+
+    def test_fetch_graph_accepts_allowed_s3_host(self, monkeypatch, tmp_path):
+        """Guard against an over-tight allow-list: the real Neuronpedia S3 host
+        must remain fetchable. (Green now and expected to stay green.)"""
+        allowed = (
+            "https://neuronpedia-attrib.s3.us-east-1.amazonaws.com/"
+            "user-graphs/test/gemma-fact-dallas-austin.json"
+        )
+        record = _record()
+        record["url"] = allowed
+        _install(monkeypatch, {
+            RECORD_URL: json.dumps(record).encode("utf-8"),
+            allowed: _fixture_bytes("neuronpedia_graph_gemma.json"),
+        })
+        graph = graph_fetch.fetch_graph(MODEL, SLUG, cache_dir=tmp_path)
+        assert graph == _graph()
+
+
+# ---------------------------------------------------------------------------
+# Cache path traversal on model_id / slug
+#
+# RED until implemented. fetch_graph builds the cache path as
+# Path(cache_dir)/model_id/f"{slug}.json" with no validation, so a hostile slug
+# like "../../evil" (or a model_id / slug carrying a path separator) escapes the
+# cache directory (and poisons the request URL). The fix must reject such inputs
+# with a ValueError at entry — before any network fetch or filesystem write.
+# ---------------------------------------------------------------------------
+
+
+class TestCachePathTraversal:
+    @pytest.mark.parametrize("model_id,slug", [
+        (MODEL, "../../evil"),      # slug traversal
+        (MODEL, "sub/evil"),        # slug separator
+        ("../../evil", SLUG),       # model_id traversal
+        ("gemma/evil", SLUG),       # model_id separator
+    ])
+    def test_fetch_graph_refuses_traversal_or_separators(
+        self, monkeypatch, tmp_path, model_id, slug
+    ):
+        cache = tmp_path / "cache"
+        # Empty routes: ANY network fetch raises AssertionError, so this also
+        # pins that the guard fires BEFORE the fetch, not merely downstream.
+        transport = _install(monkeypatch, {})
+        with pytest.raises(ValueError):
+            graph_fetch.fetch_graph(model_id, slug, cache_dir=cache)
+        # Nothing written anywhere under tmp_path, and no network attempted.
+        assert list(tmp_path.rglob("*evil*")) == []
+        assert transport.calls == []

@@ -1,9 +1,11 @@
 # striatica/tests/test_vectors.py
 """Tests for SAELens decoder vector extraction."""
 import numpy as np
+import pytest
 from pipeline.vectors import load_decoder_vectors
 
 
+@pytest.mark.slow
 def test_load_decoder_vectors_shape():
     """Decoder vectors should be (num_features, hidden_dim)."""
     vectors = load_decoder_vectors(

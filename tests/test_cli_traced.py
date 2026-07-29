@@ -101,7 +101,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 REAL_DATA_DIR = PROJECT_ROOT / "frontend" / "public" / "data"
-DATASET_METADATA_PATH = REAL_DATA_DIR / "gemma-2-2b-layer12-l0604-metadata.json"
+# Seed metadata from the COMMITTED fixture (byte copy of the real l0604 sidecar)
+# so this module collects and its tmp-seeded runs work on clean clones without
+# any local frontend/public/data files.
+DATASET_METADATA_PATH = FIXTURES / "gemma-2-2b-layer12-l0604-metadata.json"
 
 RAW_GRAPH = json.loads((FIXTURES / "neuronpedia_graph_gemma.json").read_text())
 RECORD = json.loads((FIXTURES / "neuronpedia_graph_record_gemma.json").read_text())
