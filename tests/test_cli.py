@@ -151,10 +151,14 @@ class TestModelArgparse:
 class TestTranscoderCLI:
     """Tests for transcoder-specific CLI behavior."""
 
-    def _transcoder_args(self) -> argparse.Namespace:
+    def _transcoder_args(
+        self,
+        transcoder: str = "gemma-2-9b/12/604",
+        transcoder_repo: str = "google/gemma-scope-9b-pt-transcoders",
+    ) -> argparse.Namespace:
         return argparse.Namespace(
-            transcoder="gemma-2-2b/12/604",
-            transcoder_repo="google/gemma-scope-2b-pt-transcoders",
+            transcoder=transcoder,
+            transcoder_repo=transcoder_repo,
             transcoder_width="width_16k",
             np_id=None,
             sae_release=None,
@@ -170,12 +174,25 @@ class TestTranscoderCLI:
         )
 
     def test_cmd_model_uses_transcoder_resolution_and_pipeline(self, monkeypatch):
-        """cmd_model should resolve --transcoder and run the pipeline with that config."""
-        args = self._transcoder_args()
-        cfg = TranscoderConfig(model_id="gemma-2-2b", layer=12, l0_variant=604)
+        """cmd_model should resolve --transcoder and run the pipeline with that config.
+
+        The redaction default is driven entirely by is_public_tier(cfg.model_id)
+        (since _resolve_transcoder is mocked to return `cfg`), so this test also
+        pins the public-tier policy for both a non-public and a public model.
+
+        Policy note (2026-07-28): gemma-2-2b was deliberately moved INTO
+        PUBLIC_TIER_MODELS (Gemma Scope interpretability data is intentionally
+        public; Neuronpedia hosts full explanations), so it now defaults to
+        redact_semantics=False. gemma-2-9b remains non-public-tier and must
+        still default to redaction — that is the invariant this test protects.
+        """
+        monkeypatch.setattr("pipeline.cli._detect_device", lambda *_: "cpu")
+
+        # Non-public-tier model (gemma-2-9b) → redaction ON by default.
+        args = self._transcoder_args("gemma-2-9b/12/604")
+        cfg = TranscoderConfig(model_id="gemma-2-9b", layer=12, l0_variant=604)
         calls = {}
 
-        monkeypatch.setattr("pipeline.cli._detect_device", lambda *_: "cpu")
         monkeypatch.setattr("pipeline.cli._resolve_transcoder", lambda _args: cfg)
         monkeypatch.setattr(
             "pipeline.cli._run_process_pipeline",
@@ -189,6 +206,26 @@ class TestTranscoderCLI:
         assert calls["cfg"] == cfg
         assert calls["device"] == "cpu"
         assert calls["redact_semantics"] is True  # non-public model defaults to redaction
+
+        # Companion (2026-07-28 policy): public-tier gemma-2-2b defaults to NO redaction.
+        public_args = self._transcoder_args(
+            "gemma-2-2b/12/604", transcoder_repo="google/gemma-scope-2b-pt-transcoders"
+        )
+        public_cfg = TranscoderConfig(model_id="gemma-2-2b", layer=12, l0_variant=604)
+        public_calls = {}
+
+        monkeypatch.setattr("pipeline.cli._resolve_transcoder", lambda _args: public_cfg)
+        monkeypatch.setattr(
+            "pipeline.cli._run_process_pipeline",
+            lambda c, data_dir, device, redact_semantics, pca_dim="auto": public_calls.update(
+                cfg=c, data_dir=data_dir, device=device, redact_semantics=redact_semantics, pca_dim=pca_dim
+            ),
+        )
+
+        cmd_model(public_args)
+
+        assert public_calls["cfg"] == public_cfg
+        assert public_calls["redact_semantics"] is False  # public-tier model: no redaction by default
 
     def test_resolve_transcoder_parses_valid_spec(self):
         """_resolve_transcoder should parse model/layer/l0 into TranscoderConfig."""
