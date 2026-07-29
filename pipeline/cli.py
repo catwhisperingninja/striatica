@@ -746,19 +746,49 @@ def cmd_validate(args: argparse.Namespace) -> None:
 # ── Circuits ─────────────────────────────────────────────────────────────
 
 def cmd_circuits(args: argparse.Namespace) -> None:
-    """Delegate to the existing generate_circuits script."""
+    """Delegate to a circuits script: traced (--traced) or legacy."""
     from pipeline.banner import print_banner
 
     print_banner()
 
-    # The generate_circuits script lives outside the installed package
-    # (striatica/scripts/), so we add it to sys.path and invoke its main().
+    # Both circuits scripts live outside the installed package
+    # (striatica/scripts/), so we add it to sys.path and invoke their main().
     scripts_dir = PROJECT_ROOT / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
+
+    if "--traced" in args.circuit_args:
+        # Route to the traced-circuit orchestrator with the '--traced' token
+        # removed; order and every other token preserved verbatim.
+        traced_argv = [tok for tok in args.circuit_args if tok != "--traced"]
+        from generate_traced_circuits import main as traced_main
+        rc = traced_main(traced_argv)
+        if rc:
+            sys.exit(rc)
+        return
+
     sys.argv = ["striat circuits"] + args.circuit_args
     from generate_circuits import main as circuits_main
     circuits_main()
+
+
+# ── Semantics merge ──────────────────────────────────────────────────────
+
+def cmd_semantics_merge(args: argparse.Namespace) -> None:
+    """Forward argv verbatim to pipeline.semantics_merge (local-only merge)."""
+    from pipeline.banner import error
+
+    try:
+        from pipeline.semantics_merge import main as merge_main
+    except ImportError:
+        error(
+            "semantics-merge is unavailable: the pipeline.semantics_merge "
+            "module is not present in this checkout."
+        )
+        sys.exit(1)
+    rc = merge_main(args.merge_args)
+    if rc:
+        sys.exit(rc)
 
 
 # ── Main parser ──────────────────────────────────────────────────────────
@@ -882,7 +912,15 @@ def main() -> None:
     )
     p_circuits.set_defaults(func=cmd_circuits)
 
-    # Parse known args — circuits subcommand passes everything through
+    # ── semantics-merge ──
+    p_sem = sub.add_parser(
+        "semantics-merge",
+        help="Merge semantic explanations into a local dataset JSON (never committed)",
+        add_help=False,  # let pipeline.semantics_merge handle its own --help
+    )
+    p_sem.set_defaults(func=cmd_semantics_merge)
+
+    # Parse known args — circuits and semantics-merge pass everything through
     args, unknown = parser.parse_known_args()
 
     if args.command is None:
@@ -894,6 +932,8 @@ def main() -> None:
 
     if args.command == "circuits":
         args.circuit_args = unknown
+    elif args.command == "semantics-merge":
+        args.merge_args = unknown
     elif unknown:
         parser.error(f"unrecognized arguments: {' '.join(unknown)}")
 

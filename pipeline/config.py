@@ -68,6 +68,8 @@ PUBLIC_TIER_MODELS = frozenset({
     "gpt2",          # alias
     "pythia-70m",    # 70M params — too small for meaningful safety circuits
     "pythia-70m-deduped",
+    "gemma-2-2b",    # Gemma Scope interpretability data deliberately public;
+                     # Neuronpedia hosts full explanations
 })
 
 

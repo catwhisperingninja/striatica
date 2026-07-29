@@ -220,3 +220,50 @@ def test_circuit_preserves_metadata():
     assert circuit["source"] == "neuronpedia"
     assert "prompt" in circuit["metadata"]
     assert circuit["metadata"]["slug"] == "gemma-fact-dallas-austin"
+
+
+def test_non_numeric_layer_nodes_skipped_and_counted():
+    """Real graphs contain nodes int(node["layer"]) cannot parse — skip & count.
+
+    The REAL fixture graph (gemma-fact-dallas-austin, fetched 2026-07-28) has
+    53 nodes: 11 embedding nodes with layer "E" (which crash int()), 5 logit
+    nodes at layer "27", 25 nodes at layer "0", and 12 nodes at layer "12" of
+    which only 6 are cross-layer-transcoder feature nodes — the other 6 are
+    "mlp reconstruction error" nodes with feature=-1 that cannot yield a valid
+    local feature index. parse_neuronpedia_circuit must parse this graph
+    without raising, keep exactly the 6 valid layer-12 features, and report
+    every non-kept node in metadata["droppedByLayer"] keyed by
+    str(node["layer"]) — including the unparseable layer-12 error nodes under
+    "12". Existing signature and return shape are unchanged; droppedByLayer is
+    a metadata addition only.
+    """
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "neuronpedia_graph_gemma.json"
+    data = json.loads(fixture.read_text())
+
+    circuit = parse_neuronpedia_circuit(
+        data, name="gemma-l12", description="hardening", layer_filter=12
+    )
+
+    indices = sorted(n["featureIndex"] for n in circuit["nodes"])
+    assert indices == [2082, 2799, 8580, 10631, 12601, 12910]
+    # Activations stay RAW at parse time (normalization is the traced
+    # builder's job) and skipped error nodes never leak None activations.
+    by_index = {n["featureIndex"]: n for n in circuit["nodes"]}
+    assert by_index[2082]["activation"] == 7.404547691345215
+    for node in circuit["nodes"]:
+        assert isinstance(node["activation"], float)
+
+    # Forward DAG: no link connects two layer-12 nodes.
+    assert circuit["edges"] == []
+
+    assert circuit["metadata"]["droppedByLayer"] == {
+        "E": 11,
+        "27": 5,
+        "0": 25,
+        "12": 6,
+    }
+    # Original graph metadata is still preserved alongside the addition.
+    assert circuit["metadata"]["slug"] == "gemma-fact-dallas-austin"

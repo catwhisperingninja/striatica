@@ -402,17 +402,35 @@ def parse_neuronpedia_circuit(
         for node_id in sn[1:]:
             supernode_roles[node_id] = label
 
-    # Filter nodes by layer and convert to local indices
+    # Filter nodes by layer and convert to local indices. Real graphs contain
+    # nodes that cannot be kept: embedding/logit nodes with non-numeric layers
+    # (e.g. "E") that crash int(), and in-layer "mlp reconstruction error"
+    # nodes (feature=-1) with no valid local index. These are skipped and
+    # counted in dropped_by_layer, keyed by str(node["layer"]).
     node_id_to_local: dict[str, int] = {}  # node_id -> local feature index
     nodes = []
+    dropped_by_layer: dict[str, int] = {}
 
     for node in data.get("nodes", []):
-        node_layer = int(node["layer"])
+        layer_key = str(node["layer"])
+        try:
+            node_layer = int(node["layer"])
+        except (TypeError, ValueError):
+            # Non-numeric layer (e.g. "E" embedding nodes) — skip and count.
+            dropped_by_layer[layer_key] = dropped_by_layer.get(layer_key, 0) + 1
+            continue
         if node_layer != layer_filter:
+            dropped_by_layer[layer_key] = dropped_by_layer.get(layer_key, 0) + 1
             continue
 
         global_index = node["feature"]
-        local_index = extract_local_feature_index(global_index, layer=node_layer)
+        try:
+            local_index = extract_local_feature_index(global_index, layer=node_layer)
+        except (TypeError, ValueError):
+            # In-layer node without a valid feature index (e.g. an
+            # "mlp reconstruction error" node, feature=-1) — skip and count.
+            dropped_by_layer[layer_key] = dropped_by_layer.get(layer_key, 0) + 1
+            continue
         node_id = node["node_id"]
         node_id_to_local[node_id] = local_index
 
@@ -440,10 +458,11 @@ def parse_neuronpedia_circuit(
                 "weight": link.get("weight", 0.0),
             })
 
-    # Preserve source metadata
+    # Preserve source metadata (shallow copy so additions never mutate input)
     metadata = {}
     if "metadata" in data:
         metadata = dict(data["metadata"])
+    metadata["droppedByLayer"] = dropped_by_layer
 
     return {
         "name": name,
