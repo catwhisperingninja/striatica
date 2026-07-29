@@ -1,0 +1,16 @@
+# Euclidicity audit environment (Bite 1) — SEPARATE from the poetry env.
+#
+# Install into a dedicated venv (see audit/README.md):
+#     python3 -m venv .venv-audit
+#     .venv-audit/bin/pip install -r requirements-audit.txt
+#
+# numpy / scipy / scikit-learn / pytest are pinned EXACTLY to the versions in
+# poetry.lock so the audit shares the numeric substrate of the main pipeline.
+# NEVER regenerate poetry.lock to satisfy this file — it is intentionally a
+# parallel, torch-free environment (gudhi is audit-only and must not enter
+# the main lockfile).
+numpy==2.4.2
+scipy==1.17.1
+scikit-learn==1.8.0
+gudhi==3.13.0
+pytest==9.0.2
