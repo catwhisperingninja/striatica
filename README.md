@@ -61,6 +61,18 @@ docker build -t striatica .                        # CPU
 docker build -f Dockerfile.gpu -t striatica-gpu .  # NVIDIA GPU
 ```
 
+To publish a **versioned** image, tag it with the DockerHub namespace + version (plus `latest`)
+and push. Because both Dockerfiles pin the reproducibility chain, an image built from a given
+commit reproduces that commit's data lineage:
+
+```bash
+docker build -t catwhisperingninja/striatica:0.4.0 -t catwhisperingninja/striatica:latest .
+docker push catwhisperingninja/striatica:0.4.0 && docker push catwhisperingninja/striatica:latest
+# GPU image:
+docker build -f Dockerfile.gpu -t catwhisperingninja/striatica-gpu:0.4.0 .
+docker push catwhisperingninja/striatica-gpu:0.4.0
+```
+
 All subcommands (`demo`, `model`, `discover`, `batch`, `validate`, `circuits`) run in
 either image. For larger models on the GPU image, add `--gpus all` and `--device cuda`:
 

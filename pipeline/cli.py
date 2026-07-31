@@ -675,7 +675,7 @@ def _run_process_pipeline(cfg, data_dir: Path, device: str = "cpu", redact_seman
         "num_features": int(vectors.shape[0]),
         "vector_dim": int(vectors.shape[1]),
         "processing_time_seconds": round(elapsed),
-        "pipeline_version": "0.3.0",
+        "pipeline_version": "0.4.0",
         "device": device,
         "redact_semantics": redact_semantics,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
