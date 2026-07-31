@@ -30,29 +30,28 @@ striatica ships one pipeline CLI, reachable three equivalent ways. All run
   `striatica-gpu` (GPU); its entrypoint is `python -m pipeline.cli`
 - **Module form:** `python -m pipeline <cmd>`
 
-## Quickstart (Docker, CPU)
+## Quickstart
 
-GPT-2 Small needs no GPU. This builds the image, generates the demo dataset directly
-into the frontend's data directory, and serves the viewer.
+striatica maps the decoder geometry of a **Gemma Scope transcoder** — the substrate for
+causal circuit tracing on Neuronpedia attribution graphs. Generation is GPU-accelerated;
+`--device cuda` targets NVIDIA (`auto` falls back to `mps`/`cpu`).
 
 ```bash
-# 1. Build the CPU image
-docker build -t striatica .
+# Build the GPU image
+docker build -f Dockerfile.gpu -t striatica-gpu .
 
-# 2. Generate the GPT-2 Small demo dataset into the frontend data dir.
-#    First run downloads ~2 GB of SAE activations from Neuronpedia S3.
-docker run -t --rm -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
-  striatica model --np-id gpt2-small/6-res-jb
+# Generate the Gemma-2-2B layer-12 transcoder atlas into the frontend data dir. First run
+# downloads the transcoder weights (HuggingFace) and the layer's explanations (Neuronpedia).
+docker run -t --rm --gpus all -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
+  striatica-gpu model --transcoder gemma-2-2b/12/6 --device cuda
 
-# 3. Launch the viewer (needs Node + pnpm on the host)
+# Launch the viewer (needs Node + pnpm on the host), then open the atlas
 cd frontend && pnpm install && pnpm dev
-
-# 4. Open the atlas
-open http://localhost:5173/?dataset=gpt2-small-6-res-jb.json
+open http://localhost:5173/?dataset=gemma-2-2b-layer12-l06.json
 ```
 
-The container writes to `/app/frontend/public/data`, so the mount above lands the JSON
-where the frontend serves it — no copy step.
+> ⚠️ The Neuronpedia-matching **l0 6** build is in progress — until it lands, open the
+> published `gemma-2-2b-layer12-l0604.json` atlas that ships in the repo to explore now.
 
 ## Docker
 
@@ -78,7 +77,7 @@ either image. For larger models on the GPU image, add `--gpus all` and `--device
 
 ```bash
 docker run -t --rm --gpus all -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
-  striatica-gpu model --transcoder gemma-2-2b/12/604 --device cuda
+  striatica-gpu model --transcoder gemma-2-2b/12/6 --device cuda
 ```
 
 **UMAP reproducibility.** UMAP output is not reproducible across library versions, even
@@ -90,26 +89,18 @@ Docker is the only guaranteed-reproducible path. Do not regenerate the lockfile 
 
 ## CLI
 
-Run `striat --help` (or `docker run striatica --help`) for the full reference. Common
+Run `striat --help` (or `docker run striatica-gpu --help`) for the full reference. Common
 subcommands:
 
 ```bash
-# Process an SAE by Neuronpedia ID (auto-resolves release, hook, and S3 batch count)
-striat model --np-id gpt2-small/6-res-jb
+# Flagship: process a Gemma Scope transcoder (model/layer/l0). L0 6 matches Neuronpedia's
+# deployed dictionary, so traced circuits align with its attribution graphs. Needs a GPU.
+striat model --transcoder gemma-2-2b/12/6 --device cuda
 
-# Process a Gemmascope transcoder (model/layer/l0 spec)
-striat model --transcoder gemma-2-2b/12/604 --device cuda
+# Validate an output JSON (optionally compare to a reference with --compare)
+striat validate frontend/public/data/gemma-2-2b-layer12-l06.json
 
-# Discover available models from the SAELens registry (no hardcoded lists)
-striat discover --families gpt2,gemma2 --sae-types res
-
-# Process several models sequentially
-striat batch --np-ids "gpt2-small/6-res-jb,gpt2-small/8-res-jb" --continue-on-error
-
-# Validate an output JSON (optionally compare to a reference)
-striat validate frontend/public/data/gpt2-small-6-res-jb.json
-
-# One-command host demo: data + circuits + frontend (Poetry install, not Docker)
+# One-command host demo: data + frontend (Poetry install, not Docker)
 striat demo
 ```
 
