@@ -42,6 +42,11 @@ striatica ships one pipeline CLI, reachable three equivalent ways. All run
   or `striatica-gpu` (GPU); its entrypoint is `python -m pipeline.cli`
 - **Module form:** `python -m pipeline <cmd>`
 
+> ⚠️ `striat` is the **host** script; the Docker **image** is `striatica` /
+> `striatica-gpu` — note the `-ica`. `docker run striat …` fails with
+> `pull access denied for striat`. In Docker, run `docker run <flags>
+> striatica-gpu <cmd>`; the `<cmd>` (e.g. `model …`, `validate …`) is identical.
+
 ## Quickstart
 
 striatica maps the decoder geometry of a **Gemma Scope transcoder** — the
@@ -86,9 +91,9 @@ docker build -f Dockerfile.gpu -t catwhisperingninja/striatica-gpu:0.4.0 .
 docker push catwhisperingninja/striatica-gpu:0.4.0
 ```
 
-All subcommands (`demo`, `model`, `discover`, `batch`, `validate`, `circuits`)
-run in either image. For larger models on the GPU image, add `--gpus all` and
-`--device cuda`:
+The pipeline subcommands (`model`, `discover`, `batch`, `validate`, `circuits`)
+run in either image; `demo` is host-only (it launches the frontend). On the GPU
+image, add `--gpus all` and `--device cuda`:
 
 ```bash
 docker run -t --rm --gpus all -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
@@ -105,8 +110,8 @@ guaranteed-reproducible path. Do not regenerate the lockfile — see
 
 ## CLI
 
-Run `striat --help` (or `docker run striatica-gpu --help`) for the full
-reference. Common subcommands:
+The subcommands below are shown in **host** form (`striat <cmd>`, from
+`pip install -e .`). Run `striat --help` for the full reference.
 
 ```bash
 # Flagship: process a Gemma Scope transcoder (model/layer/l0). L0 6 matches Neuronpedia's
@@ -115,10 +120,19 @@ striat model --transcoder gemma-2-2b/12/6 --device cuda
 
 # Validate an output JSON (optionally compare to a reference with --compare)
 striat validate frontend/public/data/gemma-2-2b-layer12-l06.json
-
-# One-command host demo: data + frontend (Poetry install, not Docker)
-striat demo
 ```
+
+**In Docker there is no `striat` binary** — the image *is* the CLI. Drop `striat`
+and prefix with `docker run <flags> striatica-gpu`; the image is
+**`striatica-gpu`** (or CPU `striatica`), never `striat`, so `docker run striat …`
+fails with `pull access denied for striat`:
+
+```bash
+docker run --rm striatica-gpu --help
+```
+
+For generation, add `--gpus all` and the data-dir mount, exactly as in the
+Quickstart above.
 
 `--device` defaults to `auto` (cuda → mps → cpu); `--pca-dim` defaults to `auto`
 (`min(d//4, 300)`). Semantic labels are redacted by default for non-public-tier
