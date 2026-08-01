@@ -44,8 +44,9 @@ striatica ships one pipeline CLI, reachable three equivalent ways. All run
 
 > ⚠️ `striat` is the **host** script; the Docker **image** is `striatica` /
 > `striatica-gpu` — note the `-ica`. `docker run striat …` fails with
-> `pull access denied for striat`. In Docker, run `docker run <flags>
-> striatica-gpu <cmd>`; the `<cmd>` (e.g. `model …`, `validate …`) is identical.
+> `pull access denied for striat`. In Docker, run
+> `docker run <flags> striatica-gpu <cmd>`; the `<cmd>` (e.g. `model …`,
+> `validate …`) is identical.
 
 ## Quickstart
 
@@ -75,25 +76,21 @@ open http://localhost:5173/?dataset=gemma-2-2b-layer12-l06.json
 ## Docker
 
 ```bash
-docker build -t striatica .                        # CPU
-docker build -f Dockerfile.gpu -t striatica-gpu .  # NVIDIA GPU
-```
-
-To publish a **versioned** image, tag it with the DockerHub namespace + version
-(plus `latest`) and push. Because both Dockerfiles pin the reproducibility
-chain, an image built from a given commit reproduces that commit's data lineage:
-
-```bash
-docker build -t catwhisperingninja/striatica:0.4.0 -t catwhisperingninja/striatica:latest .
-docker push catwhisperingninja/striatica:0.4.0 && docker push catwhisperingninja/striatica:latest
-# GPU image:
-docker build -f Dockerfile.gpu -t catwhisperingninja/striatica-gpu:0.4.0 .
-docker push catwhisperingninja/striatica-gpu:0.4.0
+docker build -t striatica .                        # CPU, demo
+docker build -f Dockerfile.gpu -t striatica-gpu .  # GPU (NVIDIA)
 ```
 
 The pipeline subcommands (`model`, `discover`, `batch`, `validate`, `circuits`)
-run in either image; `demo` is host-only (it launches the frontend). On the GPU
-image, add `--gpus all` and `--device cuda`:
+run in either image; `demo` is host-only (it launches the frontend).
+
+### CPU - Any system 
+
+```bash
+docker run -t --rm -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
+  striatica model --transcoder gemma-2-2b/12/6
+```
+
+On the GPU image, add `--gpus all` and `--device cuda`:
 
 ```bash
 docker run -t --rm --gpus all -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
@@ -105,7 +102,7 @@ versions, even with the same `random_state=42` — a single patch bump to numpy,
 scipy, scikit-learn, umap-learn, or a transitive dep silently produces different
 3D positions. Both Dockerfiles pin the exact reproducibility chain and install
 it with pip (no lockfile resolution), so Docker is the only
-guaranteed-reproducible path. Do not regenerate the lockfile — see
+guaranteed-reproducible path. Do not regenerate the poetry lockfile — see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## CLI
@@ -122,10 +119,10 @@ striat model --transcoder gemma-2-2b/12/6 --device cuda
 striat validate frontend/public/data/gemma-2-2b-layer12-l06.json
 ```
 
-**In Docker there is no `striat` binary** — the image *is* the CLI. Drop `striat`
-and prefix with `docker run <flags> striatica-gpu`; the image is
-**`striatica-gpu`** (or CPU `striatica`), never `striat`, so `docker run striat …`
-fails with `pull access denied for striat`:
+**In Docker there is no `striat` binary** — the image _is_ the CLI. Drop
+`striat` and prefix with `docker run <flags> striatica-gpu`; the image is
+**`striatica-gpu`** (or CPU `striatica`), never `striat`, so
+`docker run striat …` fails with `pull access denied for striat`:
 
 ```bash
 docker run --rm striatica-gpu --help
