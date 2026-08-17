@@ -17,6 +17,13 @@ dependencies = [
     "scikit-learn==1.8.0",
     "umap-learn==0.5.11",
     "hdbscan==0.8.41",
+    # umap-learn transitives — the constraints above do NOT pin these.
+    # pynndescent builds the kNN graph; numba/llvmlite JIT the hot loops.
+    # A version change here moves feature positions exactly like the pins
+    # above do. Mirrored in Dockerfile and Dockerfile.gpu — keep in sync.
+    "numba==0.64.0",
+    "llvmlite==0.46.0",
+    "pynndescent==0.6.0",
     # === Other deps (safe to update) ===
     "requests>=2.32.5,<3.0.0",
     "huggingface-hub>=0.28.0,<1.0.0",
