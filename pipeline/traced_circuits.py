@@ -30,11 +30,12 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from pipeline import __version__
 from pipeline.banner import detail, error, info, success
 from pipeline.circuits import extract_local_feature_index, parse_neuronpedia_circuit
 from pipeline.graph_fetch import validate_graph_identity
 
-PIPELINE_VERSION = "0.4.0"
+PIPELINE_VERSION = __version__
 LABEL_PROVENANCE = "neuronpedia-public-graph"
 
 # layer_{L}/width_{W}/average_l0_{N} — the L0 identity source

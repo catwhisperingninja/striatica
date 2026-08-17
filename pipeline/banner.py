@@ -12,6 +12,8 @@ import os
 import sys
 import time
 
+from pipeline import __version__
+
 
 # ── Color System ─────────────────────────────────────────────────────
 
@@ -145,7 +147,7 @@ def _step_color(step_num: int) -> str:
 # ── Banner ──────────────────────────────────────────────────────────
 
 TAGLINE = "  geometric atlas for machine intelligence"
-VERSION_LINE = "  v0.1.0"
+VERSION_LINE = f"  v{__version__}"
 
 _BANNER_ART = "  ░▒▓  s t r i a t i c a  ≡≡≡≡≡  ▓▒░"
 

@@ -40,6 +40,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pipeline import __version__
+
 import numpy as np
 
 
@@ -110,7 +112,7 @@ class PipelineMetrics:
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     model_id: str = ""
     pipeline_mode: str = "sae"  # "sae" or "transcoder"
-    pipeline_version: str = "0.3.0"
+    pipeline_version: str = __version__
 
     # Provider info (set by caller or auto-detected)
     provider: str = ""

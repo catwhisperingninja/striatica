@@ -5,53 +5,71 @@ code in this repository.
 
 ## Project Overview
 
-**striatica** is a geometric atlas for machine intelligence — 3D visualization
-of neural network interpretability features (sparse autoencoder feature
-geometry). The core vision is described in
-`interpretability-visualization-feasibility.md`.
+**striatica** is a geometric atlas for machine intelligence — a 3D atlas of the
+decoder-weight geometry of sparse-autoencoder and transcoder dictionaries. The
+flagship artifact maps the Gemma Scope layer-12 transcoder (`average_l0_6`), the
+same dictionary Neuronpedia deploys, so every feature resolves 1:1 to a live
+public Neuronpedia object.
 
 ## Repository Structure
 
-This repo has two distinct parts:
+This repo has two real parts:
 
-### 1. Skills Collection
+1. **`pipeline/`** — the Python CLI (`striat`, `python -m pipeline`, or the
+   Docker images `striatica` / `striatica-gpu`). Fetches decoder weights, reduces
+   (PCA → UMAP), clusters (HDBSCAN), estimates local intrinsic dimension, and
+   writes a dataset JSON plus `-metadata`/`-validation` sidecars into
+   `frontend/public/data/`.
+2. **`frontend/`** — the React + React Three Fiber viewer that renders those
+   JSONs.
 
-Each top-level directory (except `mem0/`) is a Claude Code skill with a
-`SKILL.md` defining its behavior. Skills cover: After Effects scripting, agent
-development, arxiv search, brainstorming, data storytelling, deep research,
-Excel analysis, frontend design, Grafana dashboards, motion design ideation, PDF
-processing, remembering conversations, scientific critical thinking, skills
-discovery, subagent-driven development, UI styling, and XLSX creation.
+Supporting: `audit/` (isolated, torch-free geometry audits — its own venv, never
+imported by `pipeline/`), `scripts/` (entrypoints the CLI delegates to), `tests/`,
+`docs/`.
 
-Skills with `references/` subdirectories contain supporting documentation that
-the skill references.
+Plans, review docs, and the paper claims ledger live in `img/correction/`
+(current: `v5_consolidated/`). **`img/**` is gitignored** — those documents are
+private and must never reach the public repo.
 
-### 2. mem0 Plugin (`mem0/`)
+## Standing Doctrine
 
-A TypeScript npm package (`claude-code-mem0`) providing persistent memory for
-Claude Code sessions via the Mem0 API. It exposes CLI commands (`mem0-pull`,
-`mem0-push`, `mem0-session-end`) used as Claude Code hooks.
+These are fixed. Do not re-litigate them per session.
+
+**Threat model (fixed):** striatica is a **localhost-only** research tool and is
+never exposed to the internet. Do NOT add authentication, TLS, CORS/CSP
+hardening, rate limiting, or any inbound-exposure mitigation. IN scope:
+validating remote content we fetch (Neuronpedia/HF payload URLs, path safety on
+cache writes), API-key hygiene, and semantic-label handling. Any security
+addition outside this list requires explicit approval BEFORE implementation.
+
+**Review scoping — the periphery IS the ask:** capability/ecosystem reviews
+enumerate everything the platform shipped since the last review date (blog + nav
+NEW/UPDATE tags) BEFORE filtering by relevance to current plans. A plan-delta
+review is not a platform review.
+
+**Neuronpedia cadence:** weekly ~10-minute delta check (blog, nav tags, API-doc
+diff); monthly full platform review; **immediate re-probe** when an UPDATE tag
+touches an API surface we consume (currently the graph API).
+
+**CPU-first testing:** the CPU Docker image is the canonical test path and the
+audience's entry path — nobody rents a GPU to evaluate a tool. The flagship atlas
+generates CPU-only in under 4 minutes. CUDA-first applies to device *code*;
+CPU-first applies to testing and docs.
 
 ## Build & Development Commands
 
-### xlsx Skill
-
-Formula recalculation requires LibreOffice:
-
 ```bash
-python xlsx/recalc.py <excel_file> [timeout_seconds]
+# Build the CPU image and generate the flagship atlas
+docker build -t striatica .
+docker run -t --rm -v "$(pwd)/frontend/public/data:/app/frontend/public/data" \
+  striatica model --transcoder gemma-2-2b/12/6
+
+# Viewer
+cd frontend && pnpm install && pnpm dev
+
+# Tests
+poetry run pytest tests/ -m "not slow"
 ```
-
-### arxiv-search Skill
-
-```bash
-python arxiv-search/arxiv_search.py
-```
-
-### PDF Processing
-
-Requires: `pip install pdfplumber pypdf pillow pytesseract pandas` OCR requires:
-`brew install tesseract`
 
 ## CI/CD
 
@@ -59,17 +77,21 @@ No CI/CD pipeline is currently configured. The previous GitLab CI setup
 (Auto-DevOps with SAST and secret detection) was not transferred. GitHub Actions
 can be added as needed.
 
-## Tech Stack (Visualization Project)
+## Tech Stack (as built)
 
-A feasibility study was performed and recommends:
+- **Viewer:** React + React Three Fiber + custom GLSL shaders
+- **Pipeline:** Python — decoder weights from HuggingFace / Neuronpedia → PCA
+  (adaptive dim) → UMAP to 3D → HDBSCAN → local intrinsic dimension
+  (participation ratio + VGT growth curves, computed on the full-dimensional
+  vectors, never the 3D projection) → dataset JSON + validation sidecars
+- **Compute:** CPU is sufficient for the flagship (16,384 × 2,304, under 4
+  minutes). CUDA accelerates larger dictionaries; `--device` defaults to `auto`
+  (cuda → mps → cpu)
 
-- **Interactive viz:** React + React Three Fiber + custom shaders
-- **Video output:** Remotion wrapping R3F scenes
-- **Data pipeline:** Python (SAELens + TransformerLens) -> dimensionality
-  reduction -> JSON for frontend
-- **Key algorithms:** PCA -> 4D subspace -> stereographic projection -> 3D,
-  cross-sectional slicing via Three.js clipping planes
-- **Local inference:** 32GB VRAM for SAELens on Gemma 2B or Llama 3 8B
+A stratified-geometry (topological, non-UMAP) replacement for the reduction
+stage is designed but **gated** — no TDA/persistence/mapper code enters
+`pipeline/` until the Phase-0 euclidicity audit produces its memo and the plan
+has two external validations. `audit/` is where that work is allowed to live.
 
 ## Critical Rules
 

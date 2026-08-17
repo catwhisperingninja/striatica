@@ -19,6 +19,8 @@ from typing import Any
 
 import numpy as np
 
+from pipeline import __version__
+
 
 # ── Data Structures ────────────────────────────────────────────────────
 
@@ -554,7 +556,7 @@ def write_validation_sidecar(
         "level2": l2_report.to_dict() if l2_report else None,
         "level3": l3_report.to_dict() if l3_report else None,
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "pipeline_version": "0.3.0"  # keep in sync with pyproject.toml,
+        "pipeline_version": __version__,
     }
 
     sidecar_path = output_path.with_name(output_path.stem + "-validation.json")

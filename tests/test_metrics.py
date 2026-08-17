@@ -286,8 +286,12 @@ def test_default_umap_random_state():
 
 
 def test_default_pipeline_version():
+    """pipeline_version defaults to the single-sourced pipeline.__version__
+    (pyproject.toml), never a hardcoded literal."""
+    from pipeline import __version__
+
     m = PipelineMetrics()
-    assert m.pipeline_version == "0.3.0"
+    assert m.pipeline_version == __version__
 
 
 # --- Edge: prometheus push without gateway ---
