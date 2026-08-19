@@ -498,15 +498,22 @@ def test_salt_hex_case_and_whitespace_tolerated():
     assert C.verify(data, spaced, digest_hex) is True
 
 
-def test_random_wrong_length_salt_incidentally_fails():
-    """A *random* 32-byte salt fails — but note this is incidental.
+def test_wrong_length_salt_rejected_loudly():
+    """A wrong-length salt is rejected with ValueError, never silently recomputed.
 
-    Contrast with test_binding_DEFECT_equivocation_numeric: a *chosen*
-    wrong-length salt can still succeed. Random miss != length validation.
+    Historical note: this test predates the equivocation fix and originally
+    asserted verify(...) is False, back when a wrong-length salt slid through to
+    an (incidentally) mismatching digest. compute_commitment now enforces
+    SALT_BYTES as the fixed salt/data boundary — the mechanism that closes the
+    chosen-salt equivocation attack (see test_binding_DEFECT_equivocation_numeric,
+    which passes as a positive test) — so verify() raises, consistent with the
+    malformed-salt contract in test_verify_malformed_salt_raises_valueerror_at_api_level.
+    Updated 2026-08-18 per gatekeeper ruling (agent_reports/20260818-gate-pretest).
     """
     data = {"x": 1}
     _, digest_hex = C.commit(data)
-    assert C.verify(data, C.secrets.token_bytes(32).hex(), digest_hex) is False
+    with pytest.raises(ValueError, match="salt must be"):
+        C.verify(data, C.secrets.token_bytes(32).hex(), digest_hex)
 
 
 def test_verify_malformed_salt_raises_valueerror_at_api_level():
