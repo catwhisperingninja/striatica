@@ -25,10 +25,10 @@ dependencies = [
     "llvmlite==0.46.0",
     "pynndescent==0.6.0",
     # === Other deps (safe to update) ===
-    "requests>=2.32.5,<3.0.0",
+    "requests>=2.33.0,<3.0.0",
     "huggingface-hub>=0.28.0,<1.0.0",
     "safetensors>=0.5.0,<1.0.0",
-    "python-dotenv>=1.1.0,<2.0.0"
+    "python-dotenv>=1.2.2,<2.0.0"
 ]
 
 [project.scripts]
@@ -56,6 +56,6 @@ markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2,<10.0.0",
+    "pytest>=9.0.3,<10.0.0",
     "ruff>=0.15.4,<0.16.0"
 ]
