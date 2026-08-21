@@ -12,4 +12,10 @@ command -v poetry >/dev/null 2>&1 || echo "warn: poetry missing — run .agents/
 [ -d frontend/node_modules ] || echo "warn: frontend/node_modules missing — run .agents/setup" >&2
 [ -f .env ] || cp -- .env.example .env
 
+# Restart the Docker daemon if it isn't running (fast no-op when active).
+if command -v docker >/dev/null 2>&1; then
+  systemctl is-active --quiet docker || sudo systemctl start docker || \
+    echo "warn: docker daemon failed to start" >&2
+fi
+
 echo "resume ok"

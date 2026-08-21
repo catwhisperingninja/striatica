@@ -2,7 +2,10 @@
 # Orb setup for striatica. Idempotent; safe to re-run on a stale snapshot.
 #
 # HARD PROJECT POLICY (applies to every orb/agent on this project):
-#   - Python 3.12 and Poetry 2.x are REQUIRED.
+#   - Python 3.12 and Poetry 2.x are REQUIRED. Classic python venvs only.
+#   - uv is BANNED on this project (conflicts with poetry). The orb base
+#     image ships it, so this script removes it (see teardown step; delete
+#     that step to undo the ban).
 #   - NEVER run `poetry lock` or `poetry update`. The committed poetry.lock
 #     pins the exact versions that produced the current datasets (UMAP output
 #     is not reproducible across dependency versions).
@@ -17,26 +20,64 @@ export PATH="$HOME/.local/bin:$PATH"
 
 step() { printf '\n==> %s [%s]\n' "$1" "$(date +%H:%M:%S)"; }
 
-# --- 1. uv (installs/pins the Python 3.12 toolchain) -----------------------
-step "Ensure uv"
-if ! command -v uv >/dev/null 2>&1; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+# --- 0. Tear down uv (base image ships it; project bans it) -----------------
+# Scoped strictly to uv-owned paths so this step is easy to revert: delete
+# this block and uv returns with the next fresh base image.
+step "Remove uv from orb"
+if [ -e "$HOME/.local/bin/uv" ] || [ -d "$HOME/.local/share/uv" ]; then
+  # Drop symlinks that point into uv-managed trees before deleting them.
+  for link in "$HOME/.local/bin/poetry" "$HOME/.local/bin/python3.12"; do
+    if [ -L "$link" ] && readlink "$link" | grep -q "/.local/share/uv/"; then
+      rm -f "$link"
+    fi
+  done
+  # A project venv built on a uv-managed interpreter is dead after removal.
+  if [ -L "$REPO_ROOT/.venv/bin/python" ] \
+     && readlink -f "$REPO_ROOT/.venv/bin/python" | grep -q "/.local/share/uv/"; then
+    rm -rf "$REPO_ROOT/.venv"
+  fi
+  rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"
+  rm -rf "$HOME/.local/share/uv" "$HOME/.cache/uv" "$HOME/.config/uv"
+  echo "uv removed"
+else
+  echo "uv not present"
 fi
 
-# --- 2. Python 3.12 (required BEFORE any poetry command) --------------------
-step "Ensure Python 3.12"
-uv python install 3.12
-PY312="$(uv python find 3.12)"
+# --- 1. Python 3.12 (pinned standalone CPython tarball, sha256-verified) ----
+# This is a plain CPython interpreter install — no package manager attached.
+# Poetry alone owns environments and dependency resolution.
+PY_VERSION="3.12.14"
+PY_RELEASE="20260814"
+PY_SHA256="3297691ae34f75fed81ac424e040145fccb0bafe8e581cd5cadbddfa1c0766c0"
+PY_PREFIX="$HOME/.local/python3.12"
+PY312="$PY_PREFIX/bin/python3.12"
+step "Ensure Python $PY_VERSION"
+if ! "$PY312" --version 2>/dev/null | grep -qF "$PY_VERSION"; then
+  tarball="cpython-${PY_VERSION}+${PY_RELEASE}-x86_64-unknown-linux-gnu-install_only.tar.gz"
+  tmp="$(mktemp -d)"
+  curl -fsSL -o "$tmp/$tarball" \
+    "https://github.com/astral-sh/python-build-standalone/releases/download/${PY_RELEASE}/${tarball}"
+  echo "$PY_SHA256  $tmp/$tarball" | sha256sum -c -
+  tar -xzf "$tmp/$tarball" -C "$tmp"
+  rm -rf "$PY_PREFIX"
+  mv "$tmp/python" "$PY_PREFIX"
+  rm -rf "$tmp"
+fi
 "$PY312" --version
 
-# --- 3. Poetry 2.x ----------------------------------------------------------
-step "Ensure Poetry 2.x"
-if ! command -v poetry >/dev/null 2>&1 || ! poetry --version 2>/dev/null | grep -qE 'version 2\.'; then
-  uv tool install --force --python "$PY312" 'poetry>=2.0,<3.0'
+# --- 2. Poetry 2.x in its own classic venv -----------------------------------
+POETRY_VENV="$HOME/.local/venvs/poetry"
+step "Ensure Poetry 2.x (dedicated venv)"
+if ! "$POETRY_VENV/bin/poetry" --version 2>/dev/null | grep -qE 'version 2\.'; then
+  rm -rf "$POETRY_VENV"
+  "$PY312" -m venv "$POETRY_VENV"
+  "$POETRY_VENV/bin/pip" install --quiet 'poetry>=2.0,<3.0'
 fi
+mkdir -p "$HOME/.local/bin"
+ln -sf "$POETRY_VENV/bin/poetry" "$HOME/.local/bin/poetry"
 poetry --version
 
-# --- 4. Lockfile integrity check — never re-lock ----------------------------
+# --- 3. Lockfile integrity check — never re-lock ----------------------------
 step "Verify poetry.lock matches pyproject.toml"
 if ! poetry check --lock; then
   cat >&2 <<'EOF'
@@ -48,19 +89,46 @@ EOF
   exit 1
 fi
 
-# --- 5. Install Python deps from the committed lockfile ---------------------
+# --- 4. Install Python deps from the committed lockfile ---------------------
 step "poetry install (lockfile pins only, no ml extra)"
 export POETRY_VIRTUALENVS_IN_PROJECT=true
 poetry env use "$PY312"
 poetry install --no-interaction
 
-# --- 6. Env template ---------------------------------------------------------
+# --- 5. Env template ---------------------------------------------------------
 step "Env file"
 [ -f .env ] || cp -- .env.example .env
 
-# --- 7. Frontend deps (pnpm respects packageManager pin) ---------------------
+# --- 6. Frontend deps (pnpm respects packageManager pin) ---------------------
 step "pnpm install (frontend)"
 pnpm --dir frontend install --frozen-lockfile
+
+# --- 7. Docker Engine + Compose plugin ---------------------------------------
+step "Ensure Docker + Compose"
+if ! command -v docker >/dev/null 2>&1; then
+  sudo install -m 0755 -d /etc/apt/keyrings
+  sudo curl -fsSL https://download.docker.com/linux/debian/gpg \
+    -o /etc/apt/keyrings/docker.asc
+  sudo chmod a+r /etc/apt/keyrings/docker.asc
+  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" \
+    | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  sudo usermod -aG docker "$USER"
+fi
+# Orbs are single-user local sandboxes: open the socket so agent shells
+# (which never re-login, so group membership never refreshes) can use docker.
+if [ ! -f /etc/systemd/system/docker.socket.d/override.conf ]; then
+  sudo mkdir -p /etc/systemd/system/docker.socket.d
+  printf '[Socket]\nSocketMode=0666\n' \
+    | sudo tee /etc/systemd/system/docker.socket.d/override.conf > /dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl restart docker.socket docker.service
+fi
+sudo systemctl enable --now docker > /dev/null
+docker compose version
+docker info --format 'docker daemon: {{.ServerVersion}}'
 
 # --- 8. Orb agent guidance ----------------------------------------------------
 step "Agent guidance"
@@ -71,10 +139,13 @@ if ! grep -Fq "$marker" "$HOME/.config/amp/AGENTS.md" 2>/dev/null; then
 
 $marker
 - Python venv: $REPO_ROOT/.venv (Python 3.12, managed by Poetry 2.x). Use \`poetry run ...\`.
+- uv is BANNED on this project and has been removed from this orb. Do not
+  reinstall it or use it for anything. Poetry alone manages Python deps.
 - NEVER run \`poetry lock\`, \`poetry update\`, or upgrade Python deps. The
   lockfile pins the exact versions that produced the committed datasets.
   If a dependency change seems required, stop and ask the user.
 - Tests: \`poetry run pytest tests/ -m "not slow"\`. Frontend: \`pnpm --dir frontend dev\`.
+- Docker Engine + Compose are installed (\`docker compose ...\` works directly).
 - Known-expected in fresh clones: 4 tests in tests/test_traced_writer.py fail
   with FileNotFoundError because frontend/public/data/ (dataset JSONs) is
   gitignored. Do NOT regenerate data files — that requires explicit user approval.
