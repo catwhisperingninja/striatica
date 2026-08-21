@@ -119,3 +119,8 @@ video/
 
 # Audit lane venvs (isolated, never committed)
 .venv-audit*/
+
+##############################
+# Amp orb runtime files
+##############################
+.amp/portals/*

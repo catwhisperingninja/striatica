@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Orb setup for striatica. Idempotent; safe to re-run on a stale snapshot.
+#
+# HARD PROJECT POLICY (applies to every orb/agent on this project):
+#   - Python 3.12 and Poetry 2.x are REQUIRED.
+#   - NEVER run `poetry lock` or `poetry update`. The committed poetry.lock
+#     pins the exact versions that produced the current datasets (UMAP output
+#     is not reproducible across dependency versions).
+#   - `poetry install` is only allowed from the committed lockfile, and only
+#     after Python 3.12 is available. If the lockfile does not match
+#     pyproject.toml, STOP and ask the user — do not regenerate it.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+export PATH="$HOME/.local/bin:$PATH"
+
+step() { printf '\n==> %s [%s]\n' "$1" "$(date +%H:%M:%S)"; }
+
+# --- 1. uv (installs/pins the Python 3.12 toolchain) -----------------------
+step "Ensure uv"
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+
+# --- 2. Python 3.12 (required BEFORE any poetry command) --------------------
+step "Ensure Python 3.12"
+uv python install 3.12
+PY312="$(uv python find 3.12)"
+"$PY312" --version
+
+# --- 3. Poetry 2.x ----------------------------------------------------------
+step "Ensure Poetry 2.x"
+if ! command -v poetry >/dev/null 2>&1 || ! poetry --version 2>/dev/null | grep -qE 'version 2\.'; then
+  uv tool install --force --python "$PY312" 'poetry>=2.0,<3.0'
+fi
+poetry --version
+
+# --- 4. Lockfile integrity check — never re-lock ----------------------------
+step "Verify poetry.lock matches pyproject.toml"
+if ! poetry check --lock; then
+  cat >&2 <<'EOF'
+FATAL: poetry.lock does not match pyproject.toml.
+Project policy forbids `poetry lock` / `poetry update` in any environment.
+The lockfile pins the exact versions that produced the committed datasets.
+Stop and ask the user before touching the lockfile.
+EOF
+  exit 1
+fi
+
+# --- 5. Install Python deps from the committed lockfile ---------------------
+step "poetry install (lockfile pins only, no ml extra)"
+export POETRY_VIRTUALENVS_IN_PROJECT=true
+poetry env use "$PY312"
+poetry install --no-interaction
+
+# --- 6. Env template ---------------------------------------------------------
+step "Env file"
+[ -f .env ] || cp -- .env.example .env
+
+# --- 7. Frontend deps (pnpm respects packageManager pin) ---------------------
+step "pnpm install (frontend)"
+pnpm --dir frontend install --frozen-lockfile
+
+# --- 8. Orb agent guidance ----------------------------------------------------
+step "Agent guidance"
+mkdir -p "$HOME/.config/amp"
+marker="# striatica dependency policy"
+if ! grep -Fq "$marker" "$HOME/.config/amp/AGENTS.md" 2>/dev/null; then
+  cat >> "$HOME/.config/amp/AGENTS.md" <<EOF
+
+$marker
+- Python venv: $REPO_ROOT/.venv (Python 3.12, managed by Poetry 2.x). Use \`poetry run ...\`.
+- NEVER run \`poetry lock\`, \`poetry update\`, or upgrade Python deps. The
+  lockfile pins the exact versions that produced the committed datasets.
+  If a dependency change seems required, stop and ask the user.
+- Tests: \`poetry run pytest tests/ -m "not slow"\`. Frontend: \`pnpm --dir frontend dev\`.
+- Known-expected in fresh clones: 4 tests in tests/test_traced_writer.py fail
+  with FileNotFoundError because frontend/public/data/ (dataset JSONs) is
+  gitignored. Do NOT regenerate data files — that requires explicit user approval.
+EOF
+fi
+
+step "Setup complete"
