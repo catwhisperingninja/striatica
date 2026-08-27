@@ -115,6 +115,35 @@ GPT2_TREE_FILES = [
     "sim-6133.json",
 ]
 
+# G-a skip-guard (ruling recorded 2026-08-19, v5 plan §5 G-a): the four tests
+# that read the REAL data tree skip when it is incomplete. frontend/public/
+# data/ is gitignored, so fresh clones have none of it and those tests failed
+# with FileNotFoundError instead of reporting anything about the writer under
+# test. Guarded on ALL TEN files this module reads (four datasets, three
+# sidecars, three circuit JSONs) — not just the first one the tests happen to
+# open — so the guard cannot skip past one missing file into the next.
+# The real fixture fix (committed fixtures replacing the live-tree
+# dependency) is owned by plan item A.5b#4; this skip is a deferral, not an
+# exclusion.
+_REQUIRED_REAL_FILES = [
+    *(REAL_DATA / name for name in DATASET_FILES),
+    *(REAL_DATA / name for name in SMALL_REAL_SKIP_FILES),
+    *(REAL_CIRCUITS / name for name in GPT2_TREE_FILES),
+]
+_MISSING_REAL_FILES = [
+    p.relative_to(REPO_ROOT).as_posix()
+    for p in _REQUIRED_REAL_FILES
+    if not p.is_file()
+]
+requires_real_data_tree = pytest.mark.skipif(
+    bool(_MISSING_REAL_FILES),
+    reason=(
+        "real data tree incomplete (frontend/public/data/ is gitignored; "
+        "expected on fresh clones) — missing: "
+        + ", ".join(_MISSING_REAL_FILES)
+    ),
+)
+
 
 def _load_fixture(filename: str) -> dict:
     with open(FIXTURES / filename) as f:
@@ -244,6 +273,7 @@ def _expected_manifest_entry(circuit: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+@requires_real_data_tree
 def test_real_tree_preconditions():
     for fname in DATASET_FILES:
         fields = _head_fields(REAL_DATA / fname)
@@ -333,6 +363,7 @@ def test_manifest_exact_fields_and_input_order(build, tmp_path):
     assert first["slug"] == SLUG
 
 
+@requires_real_data_tree
 def test_write_preserves_existing_tree_byte_identical(build, tmp_path):
     out_root = _make_fake_gpt2_tree(tmp_path)
     before = _tree_bytes(out_root)
@@ -427,6 +458,7 @@ def test_refuses_absolute_path_name(build, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@requires_real_data_tree
 def test_datasets_manifest_content_exact(tmp_path):
     tree = _make_datasets_tree(tmp_path)
     ret = generate_datasets_manifest(tree)
@@ -454,6 +486,7 @@ def test_datasets_manifest_content_exact(tmp_path):
     }
 
 
+@requires_real_data_tree
 def test_datasets_manifest_touches_nothing_else(tmp_path):
     tree = _make_datasets_tree(tmp_path)
     before = _tree_bytes(tree)
