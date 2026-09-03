@@ -90,7 +90,7 @@ One verdict per item. Verdicts: `APPROVE` · `CUT` · `DEFER` · `FLAG` · `EXCE
 
 Each verdict is one line carrying five fields, in this order:
 
-```
+```text
 <id> · <verdict> · authority: <locator> · reachability: <operative|non-operative|unknown> · <one-line reason>
 ```
 

@@ -124,7 +124,11 @@ the mechanism, and separate tabs give you that for free.
 1. Paste `_SHARED-PREAMBLE.md`, then the role file, then `PROJECT-PROFILE.md`, then the diff.
 2. Ask for the report in the role's output format.
 3. Save each reply to its report file yourself.
-4. Open a final conversation for the gatekeeper and paste all the reports into it.
+4. Open a conversation for the gatekeeper and paste all the reports into it.
+5. Phase 4: open **one more** conversation — not the gatekeeper's — and paste
+   `GATEKEEPER-VERIFICATION.md`, the input pile, and the gatekeeper's report. A fresh tab is exactly
+   the independence this needs. With no tooling to compare ids, run that file's § Minimum honest
+   version by hand; it is two minutes, and skipping it is how an unverified report reaches you.
 
 Slower, zero infrastructure, and it still catches real defects. This is the fallback that always works.
 
