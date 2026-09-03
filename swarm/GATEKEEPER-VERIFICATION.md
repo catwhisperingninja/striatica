@@ -39,9 +39,9 @@ The gatekeeper's report is the record. Beyond the three-line header every role w
 |---|---|
 | `id` | the id the item arrived with. Enables conservation checking. |
 | `verdict` | `APPROVE` / `CUT` / `DEFER` / `FLAG` / `EXCEPTION→HUMAN` |
-| `authority` | a locator — profile field, clause, section, `file:line` — resolvable in the CORPUS at the pinned version. **Required for every non-`APPROVE` verdict.** |
+| `authority` | a locator — profile field, clause, section, `file:line` — resolvable in the CORPUS at the pinned version. **Required for every `CUT`, `DEFER` and `FLAG`.** On `EXCEPTION→HUMAN` only, the literal `none — <what could not be resolved>`; see check 2. |
 | `reason` | one line. Prose, not checkable, and not the basis of any check below. |
-| `reachability` | operative / non-operative / unknown (from the role's risk section) |
+| `reachability` | exactly one of `operative` / `non-operative` / `unknown` (from the role's risk section). Required on every line; a missing or out-of-vocabulary value voids the line. |
 
 `authority` is the whole design. It converts "do I trust this judgment?" — unanswerable — into "does
 the cited text exist and does it say that?" — answerable by someone who did none of the work.
@@ -50,14 +50,24 @@ the cited text exist and does it say that?" — answerable by someone who did no
 
 Run in order. Any failure voids the report and it is re-run; a partially-valid gate is not a gate.
 
-**1. Conservation.** Every input item id appears exactly once in the output. No drops, no
-duplicates, no ids that were never an input. This is pure set comparison and needs no judgment —
+**1. Conservation.** Every input item id appears **exactly once** in the output. No drops, no
+duplicates, no ids that were never an input.
+
+Compare **multiplicities, not sets** — sorted id lists, or a count per id. A set comparison cannot
+express "exactly once": input `[A, B]` against output `[A, A, B]` has identical sets, so a duplicate
+verdict — two different dispositions for one item — passes unnoticed. It still needs no judgment:
 run it first, because it catches the failure that is otherwise invisible.
 
-**2. Authority resolution.** Every non-`APPROVE` verdict's `authority` locator resolves in the
-corpus at the pinned version. A dangling locator is an **invented rule**, which is the gatekeeper
-committing the exact error `PLAYBOOK.md` Lesson 7 warns about — inventing a boundary that outlives
-the conversation and becomes doctrine a later cycle cites. Also mechanical.
+**2. Authority resolution.** Every `CUT`, `DEFER` and `FLAG` verdict's `authority` locator resolves
+in the corpus at the pinned version. A dangling locator is an **invented rule**, which is the
+gatekeeper committing the exact error `PLAYBOOK.md` Lesson 7 warns about — inventing a boundary that
+outlives the conversation and becomes doctrine a later cycle cites. Also mechanical.
+
+`EXCEPTION→HUMAN` is the one exemption, and it is deliberate: that verdict exists for the case where
+no authority resolves, so requiring one would make the only honest disposition unrepresentable and
+push the gatekeeper back toward an uncitable `CUT`. It is exempt from *resolution*, not from
+*checking* — its `authority` must read `none — <what could not be resolved>`. A bare `none`, or the
+literal `none` on any other verdict, fails this check like a dangling locator.
 
 **3. Entailment.** The text at the locator must actually support the verdict. *This is the only step
 requiring judgment,* and therefore the only step where an independent model is spent. Fetch the
@@ -135,7 +145,7 @@ project:
 - ❌ A database or new record format. The verdicts are already in a report file; the versions are
   already in git.
 - ❌ A separate sign-off system for gatekeeper reports. Extend the existing one.
-- ❌ A model call for checks 1, 2, or 4. They are string and set comparisons. Spending a model on
+- ❌ A model call for checks 1, 2, or 4. They are list, count, and string comparisons. Spending a model on
   them is how this becomes too expensive to run every cycle, which is how it stops being run.
 - ❌ A standing seed corpus maintained as its own artifact. Seeds come from the report archive.
 
@@ -143,9 +153,11 @@ project:
 
 With no tooling at all:
 
-> Before acting on a gatekeeper report, diff its verdict ids against the input pile's ids — anything
-> missing is a silent drop. Then open two cited authorities at random and read them. If either does
-> not say what the verdict claims, the report is void and re-run.
+> Before acting on a gatekeeper report, sort its verdict ids and sort the input pile's ids and
+> compare the two lists. Anything missing is a silent drop; anything appearing twice is a double
+> disposition; anything present that was never an input is invented. Then open two cited authorities
+> at random and read them. If either does not say what the verdict claims, the report is void and
+> re-run.
 
 Two minutes, no code, and it catches the two failure modes that are otherwise invisible. Automate
 checks 1 and 2 when the manual comparison starts getting skipped, because it will.

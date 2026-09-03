@@ -51,8 +51,9 @@ Total setup time: about ten minutes. A four-role read-only pass runs in roughly 
 | `SIGNOFF-INVARIANT.md` | *Reference.* The freshness rule that stops stale approvals from merging. |
 | `REVIEW-STATUS.md` | *Reference.* Provenance: where this came from and what was verified. |
 
-**For run 1 you need only the first four.** The two marked *Reference* are worth reading after your
-first pass, not before it.
+**To dispatch run 1 you need only the first four** — that is setup. You still need `PLAYBOOK.md`
+before you act on a finding, and `GATEKEEPER-VERIFICATION.md` before you act on the gatekeeper's
+bottom line. The two marked *Reference* are worth reading after your first pass, not before it.
 
 ## The core idea
 

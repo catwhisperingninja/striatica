@@ -1,7 +1,9 @@
 # PROJECT PROFILE — striatica (DRAFT — NOT AUTHORITATIVE, WORKFLOW NOT APPROVED)
 
-> ⛔ **STATUS (Laura ruling 2026-08-01): this document and the entire `docs/swarm/`
-> workflow are STAGED FOR ITERATION ONLY. The swarm workflow is NOT approved for
+> ⛔ **STATUS (Laura ruling 2026-08-01): this document and the entire swarm bundle
+> workflow — ruled at `docs/swarm/`, tracked at `swarm/` since 2026-09-03; the move
+> changes the path, not the restriction — are STAGED FOR ITERATION ONLY. The swarm
+> workflow is NOT approved for
 > striatica and may not be used — read-only or otherwise — until Laura explicitly
 > approves it. Nothing here is authoritative: where this file restates CLAUDE.md or the
 > v5 plan, those sources govern.** The pre-filled content below exists so that IF the

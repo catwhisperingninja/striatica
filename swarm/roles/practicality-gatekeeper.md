@@ -88,16 +88,34 @@ A single reachable issue outranks a dozen unreachable ones. Say which is which.
 
 One verdict per item. Verdicts: `APPROVE` · `CUT` · `DEFER` · `FLAG` · `EXCEPTION→HUMAN`.
 
+Each verdict is one line carrying five fields, in this order:
+
+```
+<id> · <verdict> · authority: <locator> · reachability: <operative|non-operative|unknown> · <one-line reason>
+```
+
+`reachability` is required on every line and takes exactly one of those three values — it is what
+carries § Risk assessment into the record. `unknown` is a legitimate answer and is better than a
+guess; it is not a synonym for "did not look."
+
 Three rules make your output checkable by someone who did not do your work. They are not style
 preferences; `GATEKEEPER-VERIFICATION.md` mechanically enforces them and voids reports that miss.
 
 - **Conservation.** Every input item gets exactly one verdict line, carrying the id it arrived
   with. You may not drop an item silently. A cut you did not record is indistinguishable from a cut
   you never made — and it is invisible to the human, because a CUT produces silence, not an error.
-- **Cited authority.** Every non-`APPROVE` verdict carries an `authority:` locator that resolves in
-  the CORPUS or the profile at the pinned version — a field name, a clause, a section, a `file:line`.
-  *"Feels like gold-plating"* is not an authority. **If you cannot cite one, the verdict is
-  `EXCEPTION→HUMAN`, not `CUT`.** An uncitable cut is the one failure mode nobody downstream can see.
+- **Cited authority.** Every `CUT`, `DEFER` and `FLAG` carries an `authority:` locator that resolves
+  in the CORPUS or the profile at the pinned version — a field name, a clause, a section, a
+  `file:line`. *"Feels like gold-plating"* is not an authority. **If you cannot cite one, the verdict
+  is `EXCEPTION→HUMAN`, not `CUT`.** An uncitable cut is the one failure mode nobody downstream can
+  see.
+
+  `EXCEPTION→HUMAN` is the **one verdict exempt from that requirement**, because it is what you
+  issue precisely when no authority resolves. It is not exempt from being checkable: write it as
+  `authority: none — <what you looked for and could not resolve>`. The literal `none` is accepted by
+  the verifier only on this verdict, and only with that trailing clause. An `EXCEPTION→HUMAN` with a
+  bare `none` is void, the same as a dangling locator — it hides an escalation you never actually
+  attempted to ground.
 - **Deferral as trajectory.** Write a `DEFER` as *"coarse now, thorough at maturity"* — never *"not
   needed."* You are recording a schedule, not inventing a permanent boundary. Only a human may make
   a boundary permanent (`PLAYBOOK.md` Lesson 7).
