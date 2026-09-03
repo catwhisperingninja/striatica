@@ -43,6 +43,10 @@ identical everywhere; only the invocation syntax differs.
    input pile and the gatekeeper's report. Three of its four checks are comparisons and cost no
    model. With no tooling at all, run that file's § Minimum honest version; two minutes is not an
    excuse to skip it, because the failures it catches are invisible in the report itself.
+   The verifier is a role like any other: **its result is a report file** in the § 8 directory with
+   the same three-line `sha:` header (rule 4), and Phase 5 waits on it. A verification that lives
+   only in someone's scrollback cannot be checked against HEAD later — which is the whole failure
+   `SIGNOFF-INVARIANT.md` exists to prevent, reappearing one layer up.
 
 ## Assembling a role prompt
 
@@ -129,6 +133,9 @@ the mechanism, and separate tabs give you that for free.
    `GATEKEEPER-VERIFICATION.md`, the input pile, and the gatekeeper's report. A fresh tab is exactly
    the independence this needs. With no tooling to compare ids, run that file's § Minimum honest
    version by hand; it is two minutes, and skipping it is how an unverified report reaches you.
+6. Save the verifier's reply to its own report file, `sha:` header and all, exactly as you did in
+   step 3. Move to Phase 5 only once every check passes; a failure voids the gatekeeper's report and
+   it is re-run.
 
 Slower, zero infrastructure, and it still catches real defects. This is the fallback that always works.
 
