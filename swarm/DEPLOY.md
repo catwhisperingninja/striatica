@@ -61,7 +61,7 @@ summarized reviewers.
 Native subagents. Launch all read-only roles in **one message with multiple tool calls** so they run
 concurrently.
 
-Set `$BUNDLE` to wherever you copied this directory (striatica: `docs/swarm`) — every prompt needs
+Set `$BUNDLE` to wherever you copied this directory (striatica: `swarm`) — every prompt needs
 the **absolute or repo-relative path** to `PROJECT-PROFILE.md`, not the bare filename.
 
 ```
@@ -79,6 +79,10 @@ Agent(subagent_type: "general-purpose",
 Wait for all three. Run Phase 2 (mutation) as a single agent if needed. **Then** dispatch the
 gatekeeper with the three report paths in its prompt.
 
+Last, dispatch a **verifier seat** — a fresh agent, not the gatekeeper and not the referee — with
+`GATEKEEPER-VERIFICATION.md`, the input pile, and the gatekeeper's report. Checks 1, 2 and 4 there
+are set and string comparisons; only the entailment check costs a model.
+
 If your Claude Code install has purpose-built agent types (`adversarial-verifier`, `test-auditor`,
 `security-reviewer`, `practicality-gatekeeper`), use those instead of `general-purpose` and still
 prepend the profile pointer — the bundled role file carries project-portable content the installed
@@ -90,7 +94,7 @@ Same shape. One process per role, launched concurrently, each with the assembled
 task. Give each its own report path so they cannot collide on a write.
 
 ```
-BUNDLE=docs/swarm            # wherever you copied this directory
+BUNDLE=swarm                 # wherever you copied this directory
 <agent-cli> exec --prompt "$(cat $BUNDLE/roles/_SHARED-PREAMBLE.md \
                                  $BUNDLE/roles/adversarial-verifier.md; \
   echo \"PROJECT-PROFILE.md is at $BUNDLE/PROJECT-PROFILE.md. Read it first.\"; \

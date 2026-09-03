@@ -20,7 +20,8 @@ Reviewers skip `N/A` and probe `UNKNOWN`.
 ## 1. Identity
 
 - **Project name:** striatica
-- **Repo root:** repo root (this file lives at `docs/swarm/PROJECT-PROFILE.md`)
+- **Repo root:** repo root (this file lives at `swarm/PROJECT-PROFILE.md` — tracked and public as of
+  2026-09-03; it was previously under the gitignored `docs/**`)
 - **Default branch:** `main`
 - **Working branch for this swarm:** `<set per run>` 🧑
 - **HEAD SHA under review:** `<run git rev-parse HEAD at dispatch>` 🧑
@@ -82,7 +83,7 @@ Reviewers skip `N/A` and probe `UNKNOWN`.
 - **Regenerating the poetry lockfile** (also listed in §2 because it keeps happening).
 - **Any authenticated Neuronpedia endpoint other than `POST /api/graph/generate`** — the API has live delete/edit/vote surfaces (see §5 key blast radius); mutating a public scientific platform is never an agent's call.
 
-**Explicit exceptions:** the R0 Jaccard quarantine IS in scope; the R1 mutmut pilot on the traced-circuits lane IS in scope when R1 opens; `docs/swarm/**` and `img/correction/**` edits are normal ops.
+**Explicit exceptions:** the R0 Jaccard quarantine IS in scope; the R1 mutmut pilot on the traced-circuits lane IS in scope when R1 opens; `swarm/**` and `img/correction/**` edits are normal ops.
 
 ## 7. Scope of this review cycle 🧑 (draft; confirm/update per cycle)
 
