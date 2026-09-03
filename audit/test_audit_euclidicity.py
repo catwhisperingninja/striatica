@@ -366,8 +366,8 @@ class TestPlaneMeetsLineControl:
 
 class TestRobustness:
     def test_same_seed_is_bit_reproducible(self, plane_line_scores, plane_line_repeat_scores):
-        # Spec 4.2 B8 requires hash-stable score files; same-process
-        # same-seed bit-identity (including the NaN pattern) is the minimum.
+        """Spec 4.2 B8 requires hash-stable score files; same-process
+        same-seed bit-identity (including the NaN pattern) is the minimum."""
         S_a = plane_line_scores[4]
         S_b = plane_line_repeat_scores
         assert np.array_equal(S_a, S_b, equal_nan=True)
