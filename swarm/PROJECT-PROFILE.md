@@ -36,7 +36,7 @@ Reviewers skip `N/A` and probe `UNKNOWN`.
 - **Test runner:** pytest — `poetry run pytest tests/ -m "not slow"`; frontend E2E: Playwright via pnpm (24 tests); audit lane: `audit/test_audit_euclidicity.py` in its own venv (`requirements-audit.txt`)
 - **Typecheck command:** frontend `pnpm tsc --noEmit` (verify script name in `frontend/package.json` before claiming); Python: none configured (N/A)
 - **Build command:** `docker build -t striatica .` (CPU — **the canonical test path**); `docker build -f Dockerfile.gpu -t striatica-gpu .`; frontend `pnpm build`
-- **CI system + config path:** N/A — no CI exists (do not report its absence as a finding; it is known and tracked)
+- **CI system + config path:** **no workflow file in-tree** (`.github/` holds only issue templates), but CI *does* run on pull requests: CodeQL default setup (`Analyze (python)`, `Analyze (javascript-typescript)`) configured in repo settings, plus the GitGuardian Security Checks app. Both observed green on PR #12, 2026-09-03. There is no build/test/lint CI — that absence is known and tracked, and is not a finding. **Do not conclude "no CI" from the absence of `.github/workflows/`.**
 
 **Known footguns:**
 - **Never run `poetry lock` anywhere, ever** — UMAP output changes across dependency versions even with `random_state=42`; a lockfile regeneration silently moves every 3D position (the 2026-03-21 incident). `poetry export` is also currently broken; the pinned Docker images and `requirements-audit.txt` are the workaround, by design.
@@ -95,7 +95,9 @@ Reviewers skip `N/A` and probe `UNKNOWN`.
   - Trustworthiness 0.8104 < 0.85 scorecard bar **rides by design** — it is the measured cost of flattening ~dim-20 structure into 3D, i.e. the v5 thesis expressed as a number. L2 is a scorecard; only L1 hard-gates.
   - `poetry export` broken → worked around by pinned Docker + `requirements-audit.txt`; repair is P1-era housekeeping on Laura's machine only.
   - O(n²) trustworthiness memory (OOM at width_65k) is known and tracked; it gates 65k runs only.
-  - No CI is a known state, not a finding.
+  - The absence of **build/test/lint** CI is a known state, not a finding. Security-scan CI does
+    exist and runs on every PR (see § 2) — a *failure* there is a real finding, and this bullet is
+    not cover for ignoring one.
   - `docs/**` and `img/**` being gitignored is deliberate (private plans); flag only if a *public-facing* asset (e.g. README image) depends on an ignored path.
 
 ## 8. Where reports go
