@@ -18,16 +18,21 @@ that keeps its findings honest.
 > hardening. The one pattern already permitted independently of this bundle: the
 > practicality gatekeeper as a per-session **subagent advisor** (v5 plan §6.7).
 > `PROJECT-PROFILE.md` here is a pre-filled **draft** — not authoritative (see its header).
-> This directory sits under `docs/**`, which striatica's `.gitignore` excludes.
+> This directory was moved out of the gitignored `docs/**` and is now **tracked and public**;
+> the staged-not-approved status is unchanged by that move. `GATEKEEPER-VERIFICATION.md` is
+> specification only and authorizes no dispatch.
 
 ## Quickstart
 
-1. Copy this directory into your repo (suggested: `docs/swarm/`).
+1. Copy this directory into your repo (suggested: `swarm/`; anywhere is fine — no file in this
+   bundle depends on its own path).
 2. Fill in **`PROJECT-PROFILE.md`** — this is the *only* file you edit. Everything else reads it.
 3. Read `DEPLOY.md` and pick the section matching your agent substrate.
 4. Spawn the **three read-only reviewers in parallel** (verifier, test auditor, security), then the
    **gatekeeper last** — it reviews their reports.
-5. Collect their report files. Read `PLAYBOOK.md` before you act on any finding.
+5. Collect their report files. Read `PLAYBOOK.md` before you act on any finding, and run
+   `GATEKEEPER-VERIFICATION.md` § Minimum honest version against the gatekeeper's report — two
+   minutes, no tooling, and it catches the two failure modes nothing else can see.
 6. Only then consider write-side roles (`api-implementer`, `frontend-implementer`) — these need
    real isolation. See `DEPLOY.md` § Write-side.
 
@@ -42,11 +47,13 @@ Total setup time: about ten minutes. A four-role read-only pass runs in roughly 
 | `roles/*.md` | Six role prompts — four read-only reviewers, two implementers. |
 | `DEPLOY.md` | How to actually launch them, per substrate. |
 | `PLAYBOOK.md` | Hard-won operational lessons. **Read before acting on findings.** |
+| `GATEKEEPER-VERIFICATION.md` | How to check the gatekeeper itself — its failures are silent by construction. |
 | `SIGNOFF-INVARIANT.md` | *Reference.* The freshness rule that stops stale approvals from merging. |
 | `REVIEW-STATUS.md` | *Reference.* Provenance: where this came from and what was verified. |
 
-**For run 1 you need only the first four.** The two marked *Reference* are worth reading after your
-first pass, not before it.
+**To dispatch run 1 you need only the first four** — that is setup. You still need `PLAYBOOK.md`
+before you act on a finding, and `GATEKEEPER-VERIFICATION.md` before you act on the gatekeeper's
+bottom line. The two marked *Reference* are worth reading after your first pass, not before it.
 
 ## The core idea
 
