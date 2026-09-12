@@ -16,12 +16,14 @@ identical everywhere; only the invocation syntax differs.
                    ↓
  PHASE 3   practicality-gatekeeper      reads their reports, CUTS, compresses
                    ↓
- PHASE 4   human reads the gatekeeper's bottom line
+ PHASE 4   verify the gatekeeper        fresh seat, GATEKEEPER-VERIFICATION.md
                    ↓
- PHASE 5   write-side implementers (only if needed, ISOLATED — see below)
+ PHASE 5   human reads the gatekeeper's bottom line
+                   ↓
+ PHASE 6   write-side implementers (only if needed, ISOLATED — see below)
 ```
 
-**Four rules that are not optional:**
+**Five rules that are not optional:**
 
 1. **Phase 1 is strictly read-only — no agent writes to a tracked file.** They cost nothing but
    tokens: no worktree, no container, no disk. Launch them in a single batch, not sequentially.
@@ -36,6 +38,15 @@ identical everywhere; only the invocation syntax differs.
 4. **Everything writes to a file**, with the three-line SHA header from `_SHARED-PREAMBLE.md`.
    Never chat scrollback. Report directory is PROJECT-PROFILE § 8. Before you act on any report,
    check its `sha:` against HEAD — see `SIGNOFF-INVARIANT.md`.
+5. **Phase 4 runs on every substrate, before any human acts on the gatekeeper's bottom line.** A
+   fresh seat — not the gatekeeper, not the referee — runs `GATEKEEPER-VERIFICATION.md` against the
+   input pile and the gatekeeper's report. Three of its four checks are comparisons and cost no
+   model. With no tooling at all, run that file's § Minimum honest version; two minutes is not an
+   excuse to skip it, because the failures it catches are invisible in the report itself.
+   The verifier is a role like any other: **its result is a report file** in the § 8 directory with
+   the same three-line `sha:` header (rule 4), and Phase 5 waits on it. A verification that lives
+   only in someone's scrollback cannot be checked against HEAD later — which is the whole failure
+   `SIGNOFF-INVARIANT.md` exists to prevent, reappearing one layer up.
 
 ## Assembling a role prompt
 
@@ -61,7 +72,7 @@ summarized reviewers.
 Native subagents. Launch all read-only roles in **one message with multiple tool calls** so they run
 concurrently.
 
-Set `$BUNDLE` to wherever you copied this directory (striatica: `docs/swarm`) — every prompt needs
+Set `$BUNDLE` to wherever you copied this directory (striatica: `swarm`) — every prompt needs
 the **absolute or repo-relative path** to `PROJECT-PROFILE.md`, not the bare filename.
 
 ```
@@ -79,6 +90,10 @@ Agent(subagent_type: "general-purpose",
 Wait for all three. Run Phase 2 (mutation) as a single agent if needed. **Then** dispatch the
 gatekeeper with the three report paths in its prompt.
 
+Then Phase 4: dispatch the **verifier seat** as its own agent — not the gatekeeper, not the referee
+— with `GATEKEEPER-VERIFICATION.md`, the input pile, and the gatekeeper's report path. Only the
+entailment check costs a model.
+
 If your Claude Code install has purpose-built agent types (`adversarial-verifier`, `test-auditor`,
 `security-reviewer`, `practicality-gatekeeper`), use those instead of `general-purpose` and still
 prepend the profile pointer — the bundled role file carries project-portable content the installed
@@ -90,13 +105,13 @@ Same shape. One process per role, launched concurrently, each with the assembled
 task. Give each its own report path so they cannot collide on a write.
 
 ```
-BUNDLE=docs/swarm            # wherever you copied this directory
+BUNDLE=swarm                 # wherever you copied this directory
 <agent-cli> exec --prompt "$(cat $BUNDLE/roles/_SHARED-PREAMBLE.md \
                                  $BUNDLE/roles/adversarial-verifier.md; \
   echo \"PROJECT-PROFILE.md is at $BUNDLE/PROJECT-PROFILE.md. Read it first.\"; \
   echo 'Scope: <branch/diff>. PHASE 1 — READ-ONLY, do not modify any file.'; \
   echo 'Report to <dir>/adversarial-verifier.md')" &
-# ...repeat per role, then wait, then Phase 2, then the gatekeeper
+# ...repeat per role, then wait, then Phase 2, then the gatekeeper, then the Phase 4 verifier
 ```
 
 The `PROJECT-PROFILE.md is at …` line is **mandatory**. The role files reference the profile eleven
@@ -113,7 +128,14 @@ the mechanism, and separate tabs give you that for free.
 1. Paste `_SHARED-PREAMBLE.md`, then the role file, then `PROJECT-PROFILE.md`, then the diff.
 2. Ask for the report in the role's output format.
 3. Save each reply to its report file yourself.
-4. Open a final conversation for the gatekeeper and paste all the reports into it.
+4. Open a conversation for the gatekeeper and paste all the reports into it.
+5. Phase 4: open **one more** conversation — not the gatekeeper's — and paste
+   `GATEKEEPER-VERIFICATION.md`, the input pile, and the gatekeeper's report. A fresh tab is exactly
+   the independence this needs. With no tooling to compare ids, run that file's § Minimum honest
+   version by hand; it is two minutes, and skipping it is how an unverified report reaches you.
+6. Save the verifier's reply to its own report file, `sha:` header and all, exactly as you did in
+   step 3. Move to Phase 5 only once every check passes; a failure voids the gatekeeper's report and
+   it is re-run.
 
 Slower, zero infrastructure, and it still catches real defects. This is the fallback that always works.
 
