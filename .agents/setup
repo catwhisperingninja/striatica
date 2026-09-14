@@ -119,6 +119,16 @@ if [ "$(pnpm --version 2>/dev/null || true)" != "${PNPM_SPEC#pnpm@}" ]; then
   npm install --global --prefix "$HOME/.local" "$PNPM_SPEC"
 fi
 # Amp and supervised services use new login shells, not this script's PATH.
+# Creating .bash_profile must preserve Bash's previous login-file precedence.
+if [ ! -e "$HOME/.bash_profile" ]; then
+  cat > "$HOME/.bash_profile" <<'EOF'
+if [ -f "$HOME/.bash_login" ]; then
+  . "$HOME/.bash_login"
+elif [ -f "$HOME/.profile" ]; then
+  . "$HOME/.profile"
+fi
+EOF
+fi
 profile_marker="# striatica local toolchain"
 if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >> "$HOME/.bash_profile" <<'EOF'
