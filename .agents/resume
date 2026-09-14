@@ -7,15 +7,23 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 export PATH="$HOME/.local/bin:$PATH"
 
-command -v poetry >/dev/null 2>&1 || echo "warn: poetry missing — run .agents/setup" >&2
-[ -x .venv/bin/python ] || echo "warn: .venv missing — run .agents/setup" >&2
-[ -d frontend/node_modules ] || echo "warn: frontend/node_modules missing — run .agents/setup" >&2
+fail() { echo "resume failed: $1; stop and inspect setup logs before repairing" >&2; exit 1; }
+command -v poetry >/dev/null 2>&1 || fail "poetry missing"
+[ -x .venv/bin/python ] || fail ".venv missing"
+[ -d frontend/node_modules ] || fail "frontend/node_modules missing"
+command -v pnpm >/dev/null 2>&1 || fail "pnpm missing"
+poetry --version | grep -qE 'version 2\.' || fail "Poetry 2.x required"
+.venv/bin/python -c 'import sys; assert sys.version_info[:2] == (3, 12); import hdbscan' \
+  || fail "Python 3.12 / HDBSCAN check failed"
+PNPM_SPEC="$(node -p 'JSON.parse(require("fs").readFileSync("frontend/package.json", "utf8")).packageManager')"
+[ "$(pnpm --version)" = "${PNPM_SPEC#pnpm@}" ] || fail "pinned pnpm version required"
+poetry check --lock || fail "lockfile check failed (do not re-lock)"
 [ -f .env ] || cp -- .env.example .env
 
 # Restart the Docker daemon if it isn't running (fast no-op when active).
-if command -v docker >/dev/null 2>&1; then
-  systemctl is-active --quiet docker || sudo systemctl start docker || \
-    echo "warn: docker daemon failed to start" >&2
-fi
+command -v docker >/dev/null 2>&1 || fail "docker missing"
+docker compose version >/dev/null || fail "Docker Compose missing"
+systemctl is-active --quiet docker || sudo systemctl start docker
+docker info --format 'docker daemon: {{.ServerVersion}}' || fail "Docker daemon unavailable"
 
 echo "resume ok"
