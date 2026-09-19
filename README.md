@@ -31,6 +31,55 @@ within several weeks.
 
 ---
 
+## Amp orbs: start a ready-to-use development machine
+
+An **orb** is a remote development machine managed by Amp, separate from your
+laptop. Open the Striatica project in Amp and start a new thread in an orb.
+Amp runs [`.agents/setup`](.agents/setup) when it needs to prepare the machine,
+then caches the installed environment in a project snapshot. An exact matching
+snapshot skips setup; a stale snapshot keeps its caches and reruns setup.
+Changes on an unmerged PR branch do **not** update default-branch orb startup.
+
+**What setup prepares:** Python 3.12, Poetry 2 in a separate tool environment,
+the pipeline and development dependencies from the existing `poetry.lock`,
+native build tools for HDBSCAN, the exact pnpm version in `frontend/package.json`,
+frontend dependencies from its lockfile, and Docker with Compose/Buildx. It
+preserves existing login initialization and adds the local tools to `PATH`.
+It creates `.env` from the template only if absent; it does not provide API keys.
+It also removes the orb's uv installation under this project's Poetry-only policy.
+**Run these lifecycle scripts only inside an orb, not on your laptop.**
+
+**On wake-up:** Amp runs [`.agents/resume`](.agents/resume). It checks required
+tools, the HDBSCAN import and lockfile consistency, and starts Docker if needed.
+It installs no dependencies. Setup does not launch the viewer, generate datasets,
+or install the optional ML/audit environments or Playwright browsers.
+
+From the repository root in the orb's Terminal tab:
+
+```bash
+# Normally automatic; run manually only for deliberate setup or repair.
+./.agents/setup
+./.agents/resume
+
+# Use the prepared environment without reinstalling dependencies.
+poetry run striat --help
+poetry run pytest tests/ -m "not slow"
+pnpm --dir frontend build
+```
+
+**If installation fails, stop.** Inspect `~/.cache/amp/logs/setup.log` for
+automatic-startup failures (or the terminal output for a manual run). Do not
+run `poetry lock`, `poetry update`, upgrade packages, or change pins to make setup
+pass. UMAP geometry depends on the locked versions, including transitive
+dependencies. A failed setup is not a ready environment.
+
+Datasets under `frontend/public/data/` are gitignored and may be absent in a
+fresh orb. Do not regenerate them as a setup step; real-data test skips do not
+verify those paths. Viewer use requires separately supplied, approved data.
+Orbs sleep when idle; close your work when finished rather than running setup
+again just to keep the machine ready. See [Amp's orb documentation](https://ampcode.com/docs/orbs)
+for creating and returning to an orb.
+
 ## How the CLI is invoked
 
 striatica ships one pipeline CLI, reachable three equivalent ways. All run

@@ -18,7 +18,20 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 export PATH="$HOME/.local/bin:$PATH"
 
-step() { printf '\n==> %s [%s]\n' "$1" "$(date +%H:%M:%S)"; }
+step() { printf '\n==> %s [%s, elapsed %ss]\n' "$1" "$(date +%H:%M:%S)" "$SECONDS"; }
+
+# Standalone CPython uses clang to build locked native packages (HDBSCAN).
+step "Ensure native build prerequisites"
+missing=()
+for package in build-essential clang; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+    missing+=("$package")
+  fi
+done
+if ((${#missing[@]})); then
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+fi
 
 # --- 0. Tear down uv (base image ships it; project bans it) -----------------
 # Scoped strictly to uv-owned paths so this step is easy to revert: delete
@@ -100,6 +113,30 @@ step "Env file"
 [ -f .env ] || cp -- .env.example .env
 
 # --- 6. Frontend deps (pnpm respects packageManager pin) ---------------------
+step "Ensure pinned pnpm"
+PNPM_SPEC="$(node -p 'JSON.parse(require("fs").readFileSync("frontend/package.json", "utf8")).packageManager')"
+if [ "$(pnpm --version 2>/dev/null || true)" != "${PNPM_SPEC#pnpm@}" ]; then
+  npm install --global --prefix "$HOME/.local" "$PNPM_SPEC"
+fi
+# Amp and supervised services use new login shells, not this script's PATH.
+# Creating .bash_profile must preserve Bash's previous login-file precedence.
+if [ ! -e "$HOME/.bash_profile" ]; then
+  cat > "$HOME/.bash_profile" <<'EOF'
+if [ -f "$HOME/.bash_login" ]; then
+  . "$HOME/.bash_login"
+elif [ -f "$HOME/.profile" ]; then
+  . "$HOME/.profile"
+fi
+EOF
+fi
+profile_marker="# striatica local toolchain"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# striatica local toolchain
+export PATH="$HOME/.local/bin:$PATH"
+EOF
+fi
 step "pnpm install (frontend)"
 pnpm --dir frontend install --frozen-lockfile
 
@@ -116,6 +153,11 @@ if ! command -v docker >/dev/null 2>&1; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   sudo usermod -aG docker "$USER"
+elif ! docker compose version >/dev/null 2>&1 || ! docker buildx version >/dev/null 2>&1; then
+  # The base orb may have Docker Engine but omit its development plugins.
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-upgrade \
+    docker-buildx-plugin docker-compose-plugin
 fi
 # Orbs are single-user local sandboxes: open the socket so agent shells
 # (which never re-login, so group membership never refreshes) can use docker.
@@ -146,9 +188,9 @@ $marker
   If a dependency change seems required, stop and ask the user.
 - Tests: \`poetry run pytest tests/ -m "not slow"\`. Frontend: \`pnpm --dir frontend dev\`.
 - Docker Engine + Compose are installed (\`docker compose ...\` works directly).
-- Known-expected in fresh clones: 4 tests in tests/test_traced_writer.py fail
-  with FileNotFoundError because frontend/public/data/ (dataset JSONs) is
-  gitignored. Do NOT regenerate data files — that requires explicit user approval.
+- Real-data tests may skip because frontend/public/data/ is gitignored.
+  Skips do not verify those paths. Do NOT regenerate data files — that requires
+  explicit user approval. Stop on installation failures; do not change pins.
 EOF
 fi
 
