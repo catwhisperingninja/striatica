@@ -126,6 +126,10 @@ def load_vgt(dataset_json: Path) -> np.ndarray:
 
     PR localDimensions and the separate VGT growthCurves are not
     interchangeable. Legacy datasets without dimMethod are unidentified.
+
+    Returns localDimensions as a float64 array. Raises SystemExit(2)
+    if dimMethod is missing or differs from 'vgt'. File I/O, JSON decoding,
+    missing localDimensions, and numeric conversion errors propagate.
     """
     with open(dataset_json) as fh:
         data = json.load(fh)
@@ -165,6 +169,7 @@ def write_memo(path: Path, memo: dict) -> None:
 # ── Main ────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for the Euclidicity audit CLI."""
     parser = argparse.ArgumentParser(
         prog="run_audit.py",
         description=(

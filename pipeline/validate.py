@@ -458,7 +458,16 @@ def validate_level3(
     """Level 3 cross-model distributional comparison.
 
     Compares statistical signatures between a new result and a reference JSON.
-    Does NOT compare positions (non-comparable across UMAP runs).
+    Positions are used only to compute each dataset's silhouette score.
+
+    Scalar KS and Wasserstein metrics are informational and require both
+    localDimensions arrays with the same dimMethod ('pr', 'twonn', or
+    'vgt'). Missing arrays or incompatible estimators add a warning and
+    omit only the scalar metrics.
+
+    Returns a level-3 report containing checks, warnings, and elapsed time.
+    File I/O, JSON decoding, missing required keys, invalid array shapes,
+    and statistical metric errors propagate to the caller.
     """
     from scipy.stats import ks_2samp, wasserstein_distance
 
