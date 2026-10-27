@@ -78,6 +78,7 @@ audit/run_audit.py  (runnable script: `python audit/run_audit.py --help`
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -425,6 +426,54 @@ class TestVgtConcordanceGate:
 # ---------------------------------------------------------------------------
 # Runner smoke contract
 # ---------------------------------------------------------------------------
+
+class TestVgtLoaderContract:
+    def test_explicit_vgt_preserves_scalars_despite_conflicting_curves(self, tmp_path):
+        dataset_path = tmp_path / "dimension-control.json"
+        dataset_path.write_text(json.dumps({
+            "dimMethod": "vgt",
+            "localDimensions": [1.25, 7.5, 3.0],
+            "growthCurves": [{"slope": slope} for slope in [30.0, 2.0, 11.0]],
+        }))
+
+        values = run_audit.load_vgt(dataset_path)
+
+        np.testing.assert_array_equal(values, [1.25, 7.5, 3.0])
+
+    @pytest.mark.parametrize(
+        "identity",
+        [{"dimMethod": "pr"}, {"dimMethod": "twonn"}, {},
+         {"dimMethod": None}, {"dimMethod": "unknown"}],
+        ids=["pr", "twonn", "missing", "null", "unknown"],
+    )
+    def test_non_vgt_identity_exits_two_with_actionable_diagnostic(
+        self, tmp_path, capsys, identity,
+    ):
+        dataset_path = tmp_path / "dimension-control.json"
+        dataset_path.write_text(json.dumps({
+            **identity,
+            "localDimensions": [1.25, 7.5, 3.0],
+            "growthCurves": [{"slope": slope} for slope in [30.0, 2.0, 11.0]],
+        }))
+
+        with pytest.raises(SystemExit) as excinfo:
+            run_audit.load_vgt(dataset_path)
+
+        assert excinfo.value.code == 2
+        captured = capsys.readouterr()
+        diagnostic = captured.out + captured.err
+        assert str(dataset_path) in diagnostic
+        diagnostic = diagnostic.lower()
+        assert "vgt" in diagnostic
+        assert "dimmethod" in diagnostic or "estimator" in diagnostic
+        if "dimMethod" not in identity:
+            assert any(word in diagnostic for word in ("missing", "absent", "none", "null"))
+        elif identity["dimMethod"] is None:
+            assert any(word in diagnostic for word in ("none", "null", "missing"))
+        else:
+            assert identity["dimMethod"] in diagnostic
+        assert "--dataset-json" in diagnostic
+
 
 class TestRunnerContract:
     def test_run_audit_help_exits_zero(self):

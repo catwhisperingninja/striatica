@@ -489,20 +489,29 @@ def validate_level3(
                f"new={new_uncat:.2%}, ref={ref_uncat:.2%}, diff={diff:.2%}",
                value={"new": round(new_uncat, 4), "ref": round(ref_uncat, 4)})
 
-    # L3-DIM-DIST: KS test on local dimension distributions
+    # Scalar comparisons require the same explicitly identified estimator.
+    # VGT growth curves do not identify the separate localDimensions array.
     new_dims = result.get("localDimensions")
     ref_dims = ref.get("localDimensions")
-    if new_dims is not None and ref_dims is not None:
+    new_method = result.get("dimMethod")
+    ref_method = ref.get("dimMethod")
+    if new_dims is None or ref_dims is None:
+        report.add_warning("Skipped scalar dimension comparisons: localDimensions missing "
+                           "from result or reference")
+    elif new_method not in ("pr", "twonn", "vgt") or new_method != ref_method:
+        report.add_warning("Skipped scalar dimension comparisons: dimMethod must identify "
+                           f"the same supported estimator (new={new_method!r}, ref={ref_method!r})")
+    else:
+        # L3-DIM-DIST: KS test on like-for-like scalar distributions
         stat, p = ks_2samp(new_dims, ref_dims)
         report.add("L3-DIM-DIST", True,  # always informational
-                   f"KS stat={stat:.4f}, p={p:.4e}",
+                   f"{new_method}: KS stat={stat:.4f}, p={p:.4e}",
                    value={"ks_stat": round(stat, 4), "p_value": float(f"{p:.4e}")})
 
-    # L3-VGT-SHAPE: Wasserstein distance on VGT distributions
-    if new_dims is not None and ref_dims is not None:
+        # L3-DIM-WASSERSTEIN: distance on the declared estimator's scalars
         wd = float(wasserstein_distance(new_dims, ref_dims))
-        report.add("L3-VGT-SHAPE", True,  # informational
-                   f"Wasserstein distance={wd:.4f}",
+        report.add("L3-DIM-WASSERSTEIN", True,  # informational
+                   f"{new_method}: Wasserstein distance={wd:.4f}",
                    value=round(wd, 4))
 
     # L3-SILHOUETTE-COMP: compare silhouette scores

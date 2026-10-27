@@ -363,8 +363,116 @@ class TestLevel2:
 # ── Level 3 Tests ──────────────────────────────────────────────────────
 
 
+@pytest.fixture
+def dimension_comparison_controls():
+    """Offline report controls, not an application dataset or estimator output."""
+    common = {
+        "clusterLabels": [0, 0, 1, -1],
+        "positions": [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+        "dimMethod": "pr",
+        # Deliberately unrelated to either scalar distribution.
+        "growthCurves": [{"slope": slope} for slope in [40, 2, 30, 7]],
+    }
+    return (
+        {**common, "localDimensions": [1, 3, 8, 12]},
+        {**common, "localDimensions": [2, 5, 9, 20]},
+    )
+
+
 class TestLevel3:
     """Level 3 cross-model distributional comparison."""
+
+    @pytest.mark.parametrize("method", ["pr", "twonn", "vgt"])
+    def test_matching_estimators_compare_known_scalars(
+        self, dimension_comparison_controls, tmp_path, method,
+    ):
+        result, reference = dimension_comparison_controls
+        result["dimMethod"] = reference["dimMethod"] = method
+        ref_path = tmp_path / "reference.json"
+        ref_path.write_text(json.dumps(reference))
+
+        report = validate_level3(result, ref_path)
+        checks = report.to_dict()["checks"]
+
+        assert "L3-VGT-SHAPE" not in checks
+        ks = checks["L3-DIM-DIST"]
+        wd = checks["L3-DIM-WASSERSTEIN"]
+        assert ks["passed"] and wd["passed"]
+        assert method in ks["message"].lower()
+        assert method in wd["message"].lower()
+        # The empirical CDFs differ by at most 1/4. For equal-weight,
+        # sorted samples, W1 = (|1-2| + |3-5| + |8-9| + |12-20|) / 4 = 3.
+        # Pin independently calculated values: do not call scipy as oracle.
+        assert ks["value"]["ks_stat"] == pytest.approx(0.25)
+        assert wd["value"] == pytest.approx(3.0)
+        assert not report.warnings
+
+    @pytest.mark.parametrize(
+        "new_identity,ref_identity",
+        [
+            ({"dimMethod": "pr"}, {"dimMethod": "vgt"}),
+            ({"dimMethod": "vgt"}, {"dimMethod": "pr"}),
+            ({"dimMethod": "pr"}, {"dimMethod": "twonn"}),
+            ({}, {"dimMethod": "pr"}),
+            ({"dimMethod": "pr"}, {}),
+            ({}, {}),
+            ({"dimMethod": None}, {"dimMethod": "pr"}),
+            ({"dimMethod": "unknown"}, {"dimMethod": "unknown"}),
+        ],
+        ids=["pr-vgt", "vgt-pr", "pr-twonn", "missing-new", "missing-ref",
+             "both-missing", "null-new", "matching-unknown"],
+    )
+    def test_incompatible_estimators_skip_only_scalar_comparisons(
+        self, dimension_comparison_controls, tmp_path, new_identity, ref_identity,
+    ):
+        result, reference = dimension_comparison_controls
+        ref_path = tmp_path / "reference.json"
+        ref_path.write_text(json.dumps(reference))
+        control = validate_level3(result, ref_path).to_dict()["checks"]
+
+        result.pop("dimMethod")
+        reference.pop("dimMethod")
+        result.update(new_identity)
+        reference.update(ref_identity)
+        ref_path.write_text(json.dumps(reference))
+        report = validate_level3(result, ref_path)
+        checks = report.to_dict()["checks"]
+
+        assert not {"L3-DIM-DIST", "L3-DIM-WASSERSTEIN", "L3-VGT-SHAPE"} & checks.keys()
+        assert report.warnings
+        warning = " ".join(report.warnings).lower()
+        assert "skip" in warning
+        assert "dimmethod" in warning or "estimator" in warning
+        for identity in (new_identity, ref_identity):
+            method = identity.get("dimMethod")
+            if method is not None:
+                assert method in warning
+        for name in ("L3-CLUSTER-COUNT", "L3-UNCAT-FRAC",
+                     "L3-SILHOUETTE-COMP", "L3-CLUSTER-SIZES"):
+            assert checks[name] == control[name]
+
+    @pytest.mark.parametrize("missing_side", ["new", "reference"])
+    def test_missing_scalar_array_warns_and_preserves_other_comparisons(
+        self, dimension_comparison_controls, tmp_path, missing_side,
+    ):
+        result, reference = dimension_comparison_controls
+        ref_path = tmp_path / "reference.json"
+        ref_path.write_text(json.dumps(reference))
+        control = validate_level3(result, ref_path).to_dict()["checks"]
+
+        (result if missing_side == "new" else reference).pop("localDimensions")
+        ref_path.write_text(json.dumps(reference))
+        report = validate_level3(result, ref_path)
+        checks = report.to_dict()["checks"]
+
+        assert not {"L3-DIM-DIST", "L3-DIM-WASSERSTEIN", "L3-VGT-SHAPE"} & checks.keys()
+        assert report.warnings
+        warning = " ".join(report.warnings).lower()
+        assert "skip" in warning
+        assert "localdimensions" in warning or "scalar" in warning
+        for name in ("L3-CLUSTER-COUNT", "L3-UNCAT-FRAC",
+                     "L3-SILHOUETTE-COMP", "L3-CLUSTER-SIZES"):
+            assert checks[name] == control[name]
 
     def test_similar_distributions_pass(self, good_json, tmp_path):
         """Two datasets with similar structure should compare favorably."""

@@ -122,12 +122,19 @@ def load_vectors(input_path: Path | None) -> np.ndarray:
 
 
 def load_vgt(dataset_json: Path) -> np.ndarray:
-    """Existing per-feature VGT local-dimension scores from the main
-    dataset JSON (geometry-only file — produced by process_gpt2_small.py,
-    clean per the 2026-03-21 triage; contains no semantic labels in the
-    fields read here)."""
+    """Load scalar dimensions only when explicitly identified as VGT.
+
+    PR localDimensions and the separate VGT growthCurves are not
+    interchangeable. Legacy datasets without dimMethod are unidentified.
+    """
     with open(dataset_json) as fh:
         data = json.load(fh)
+    method = data.get("dimMethod")
+    if method != "vgt":
+        error(f"{dataset_json}: expected VGT localDimensions, got dimMethod={method!r}")
+        detail("Use --dataset-json with scalar dimensions computed by VGT and")
+        detail("identified by dimMethod='vgt'; do not relabel PR values as VGT.")
+        raise SystemExit(2)
     vgt = np.asarray(data["localDimensions"], dtype=np.float64)
     return vgt
 
@@ -180,7 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset-json",
         type=Path,
         default=DEFAULT_DATASET_JSON,
-        help="Main dataset JSON holding existing VGT localDimensions "
+        help="Dataset JSON holding VGT scalar localDimensions with dimMethod='vgt'; "
+        "PR or unidentified dimensions are rejected "
         "(default: frontend/public/data/gpt2-small-6-res-jb.json)",
     )
     parser.add_argument(
