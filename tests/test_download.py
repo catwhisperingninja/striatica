@@ -1,8 +1,20 @@
 # striatica/tests/test_download.py
-"""Tests for Neuronpedia S3 download."""
+"""Tests for Neuronpedia S3 download.
+
+Both tests download live batches from the Neuronpedia S3 bucket, so their
+outcome depends on network state at run time: a transient S3/proxy error fails
+a run that passes on retry (observed 2026-10-09, HTTP 404 on batch-0
+explanations in 1 of 10 runs at the same SHA). Network-reliant tests are
+fenced out of the canonical `-m "not slow"` run, like the live Neuronpedia
+identity check in test_graph_fetch.py.
+"""
 import json
-from pathlib import Path
+
+import pytest
+
 from pipeline.download import download_features, download_explanations
+
+pytestmark = pytest.mark.slow  # live S3 download — not in the canonical run
 
 
 def test_download_features_creates_file(tmp_path):
