@@ -56,18 +56,34 @@ are validation geometries, not application mock data.
 ## Running the audit
 
 Raw GPT-2 Small decoder vectors are not cached in the repo. Export them
-once from the **poetry** env, then run the audit from the **audit** venv:
+and compute the VGT reference in the **poetry** env, then run the audit
+from the **audit** venv. The reference dataset below comes from
+`pipeline.local_dim.estimate_local_dim_vgt` applied to the same raw
+`gpt2-small-res-jb` / `blocks.6.hook_resid_pre` decoder vectors, preserving
+feature order. It stores VGT-derived `localDimensions` and `dimMethod: "vgt"`.
+The normal frontend pipeline writes PR scalar dimensions with separate VGT
+growth curves; those scalar dimensions are not a VGT reference.
 
 ```bash
 poetry run python -c "
+import json
+from pathlib import Path
+from pipeline.local_dim import estimate_local_dim_vgt
 from pipeline.vectors import load_decoder_vectors
 import numpy as np
+Path('data').mkdir(exist_ok=True)
 v = load_decoder_vectors('gpt2-small-res-jb', 'blocks.6.hook_resid_pre')
 np.save('data/gpt2-small-6-res-jb-decoder.npy', np.asarray(v))
+dims = estimate_local_dim_vgt(v)
+Path('data/gpt2-small-6-res-jb-vgt.json').write_text(json.dumps({
+    'dimMethod': 'vgt',
+    'localDimensions': dims.tolist(),
+}))
 "
 
 .venv-audit/bin/python audit/run_audit.py \
     --input data/gpt2-small-6-res-jb-decoder.npy \
+    --dataset-json data/gpt2-small-6-res-jb-vgt.json \
     --run-id run1
 ```
 
