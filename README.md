@@ -147,11 +147,17 @@ docker run -t --rm --gpus all -v "$(pwd)/frontend/public/data:/app/frontend/publ
 ```
 
 **UMAP reproducibility.** UMAP output is not reproducible across library
-versions, even with the same `random_state=42` — a single patch bump to numpy,
-scipy, scikit-learn, umap-learn, or a transitive dep silently produces different
-3D positions. Both Dockerfiles pin the exact reproducibility chain and install
-it with pip (no lockfile resolution), so Docker is the only
-guaranteed-reproducible path. Do not regenerate the poetry lockfile — see
+versions, even with the same `random_state=42` — a patch bump to numpy,
+scipy, scikit-learn, umap-learn, or a transitive dependency can change
+3D positions. Both Dockerfiles pin their base-image digest and Poetry version,
+and install application dependencies, including transitives, from the committed
+`poetry.lock` without re-locking. System packages and installer bootstrap
+dependencies still come from upstream repositories; this is not a claim of
+bit-for-bit image reproducibility or recovery of the original paper environment.
+For historical reproduction, preserve the original arrays, decoder revision,
+code/configuration and environment evidence. PR/VGT scalars are computed on the
+original decoder vectors, but projection-dependent clusters and screenshots
+also depend on PCA/UMAP settings. Do not regenerate the lockfile — see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## CLI
