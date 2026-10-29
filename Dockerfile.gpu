@@ -8,7 +8,7 @@
 #   docker run --gpus all -v $(pwd)/output:/app/output -it \
 #     striatica-pipeline:gpu bash
 
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04@sha256:517da2300c184c9999ec203c2665244bdebd3578d12fcc7065e83667932643d9
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -24,58 +24,40 @@ RUN apt-get update && \
         python3.12-dev \
         build-essential \
         git \
-        curl \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.12 /usr/bin/python
 
-# pip for Python 3.12 (apt python3-pip installs for system python, not 3.12)
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python
+# Bootstrap the pinned installer separately from the application environment.
+RUN python -m venv /opt/poetry \
+    && /opt/poetry/bin/pip install --no-cache-dir "poetry==2.5.1"
 
 WORKDIR /app
 
-# PyTorch with CUDA — install FIRST so later deps don't pull CPU torch
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu124
+# Stream CLI and child-process output immediately, including without a TTY.
+ENV PYTHONUNBUFFERED=1
 
-# === UMAP REPRODUCIBILITY CHAIN — exact pins ===
-# These versions produced the Feb 27 2026 dataset positions.
-# Changing ANY of these will produce different 3D embeddings
-# even with the same random_state. Do not widen these ranges.
-RUN pip install --no-cache-dir \
-    "numpy==2.4.2" \
-    "scipy==1.17.1" \
-    "scikit-learn==1.8.0" \
-    "umap-learn==0.5.11" \
-    "hdbscan==0.8.41" \
-    "numba==0.64.0" \
-    "llvmlite==0.46.0" \
-    "pynndescent==0.6.0"
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true
+ENV PATH="/app/.venv/bin:/opt/poetry/bin:$PATH"
 
-# Other pipeline deps
-RUN pip install --no-cache-dir \
-    "requests>=2.32.5,<3.0.0" \
-    "huggingface-hub>=0.28.0,<1.0.0" \
-    "safetensors>=0.5.0,<1.0.0" \
-    "python-dotenv>=1.1.0,<2.0.0"
+# Use the same locked dependencies as the CPU image, including PyTorch's CUDA
+# libraries. Do not replace locked torch with an unpinned CUDA-index install.
+COPY pyproject.toml poetry.lock ./
+# Reuse downloads across builds without shipping the installer cache.
+RUN --mount=type=cache,target=/root/.cache \
+    poetry install --extras ml --no-root --no-interaction --no-ansi
 
-# ML optional deps (SAELens, TransformerLens, transformers)
-RUN pip install --no-cache-dir \
-    "sae-lens>=6.37.0" \
-    "transformer-lens>=2.12.0" \
-    "transformers>=4.40.0,<5.0.0"
-
-# Copy source and install project (striat entrypoint)
-COPY pyproject.toml ./
+# Copy source and install only the project (striat entrypoint).
 COPY pipeline/ pipeline/
 COPY scripts/ scripts/
 COPY tests/ tests/
-RUN pip install --no-cache-dir -e .
+RUN poetry install --only-root --no-interaction --no-ansi
 
 RUN mkdir -p /app/output /app/data
 ENV STRIATICA_OUTPUT_DIR=/app/output
 ENV STRIATICA_DATA_DIR=/app/data
 
 # Smoke test at build time
-RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.backends.cuda.is_built()}')" || true
+RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA build: {torch.version.cuda}'); assert torch.backends.cuda.is_built()"
 RUN python -c "from pipeline.vectors import load_transcoder_vectors; print('transcoder loader OK')"
 
 ENTRYPOINT ["python", "-m", "pipeline.cli"]

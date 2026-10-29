@@ -6,7 +6,7 @@
 #   docker run -v $(pwd)/output:/app/output striatica-pipeline model --np-id gpt2-small/6-res-jb
 #   docker run -v $(pwd)/output:/app/output striatica-pipeline batch --np-ids '...'
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
 
 # System deps for numpy/scipy builds (if needed) + git for pip installs
 RUN apt-get update && \
@@ -17,39 +17,25 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-# === UMAP REPRODUCIBILITY CHAIN — exact pins ===
-# These versions produced the Feb 27 2026 dataset positions.
-# Changing ANY of these will produce different 3D embeddings
-# even with the same random_state. Do not widen these ranges.
-RUN pip install --no-cache-dir \
-    "numpy==2.4.2" \
-    "scipy==1.17.1" \
-    "scikit-learn==1.8.0" \
-    "umap-learn==0.5.11" \
-    "hdbscan==0.8.41" \
-    "numba==0.64.0" \
-    "llvmlite==0.46.0" \
-    "pynndescent==0.6.0"
+# Stream CLI and child-process output immediately, including without a TTY.
+ENV PYTHONUNBUFFERED=1
 
-# Other pipeline deps
-RUN pip install --no-cache-dir \
-    "requests>=2.32.5,<3.0.0" \
-    "huggingface-hub>=0.28.0,<1.0.0" \
-    "safetensors>=0.5.0,<1.0.0" \
-    "python-dotenv>=1.1.0,<2.0.0"
+# Keep Poetry's tools separate from the locked application environment.
+RUN pip install --no-cache-dir "poetry==2.5.1"
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true
+ENV PATH="/app/.venv/bin:$PATH"
 
-# ML optional deps (SAELens, TransformerLens, transformers)
-# CPU torch pulled automatically as a dep
-RUN pip install --no-cache-dir \
-    "sae-lens>=6.37.0" \
-    "transformer-lens>=2.12.0" \
-    "transformers>=4.40.0,<5.0.0"
+# Install every application dependency (including transitives) from the lock.
+# Never resolve new versions or regenerate the lockfile during a build.
+COPY pyproject.toml poetry.lock ./
+# Reuse downloads across builds without shipping the installer cache.
+RUN --mount=type=cache,target=/root/.cache \
+    poetry install --extras ml --no-root --no-interaction --no-ansi
 
-# Copy source and install project (striat entrypoint)
-COPY pyproject.toml ./
+# Copy source and install only the project (striat entrypoint).
 COPY pipeline/ pipeline/
 COPY scripts/ scripts/
-RUN pip install --no-cache-dir -e .
+RUN poetry install --only-root --no-interaction --no-ansi
 
 # Output directory
 RUN mkdir -p /app/output /app/data
