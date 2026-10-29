@@ -28,7 +28,9 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Install every application dependency (including transitives) from the lock.
 # Never resolve new versions or regenerate the lockfile during a build.
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --extras ml --no-root --no-interaction --no-ansi
+# Reuse downloads across builds without shipping the installer cache.
+RUN --mount=type=cache,target=/root/.cache \
+    poetry install --extras ml --no-root --no-interaction --no-ansi
 
 # Copy source and install only the project (striat entrypoint).
 COPY pipeline/ pipeline/

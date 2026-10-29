@@ -42,7 +42,9 @@ ENV PATH="/app/.venv/bin:/opt/poetry/bin:$PATH"
 # Use the same locked dependencies as the CPU image, including PyTorch's CUDA
 # libraries. Do not replace locked torch with an unpinned CUDA-index install.
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --extras ml --no-root --no-interaction --no-ansi
+# Reuse downloads across builds without shipping the installer cache.
+RUN --mount=type=cache,target=/root/.cache \
+    poetry install --extras ml --no-root --no-interaction --no-ansi
 
 # Copy source and install only the project (striat entrypoint).
 COPY pipeline/ pipeline/
