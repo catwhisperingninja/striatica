@@ -458,7 +458,16 @@ def validate_level3(
     """Level 3 cross-model distributional comparison.
 
     Compares statistical signatures between a new result and a reference JSON.
-    Does NOT compare positions (non-comparable across UMAP runs).
+    Positions are used only to compute each dataset's silhouette score.
+
+    Scalar KS and Wasserstein metrics are informational and require both
+    localDimensions arrays with the same dimMethod ('pr', 'twonn', or
+    'vgt'). Missing arrays or incompatible estimators add a warning and
+    omit only the scalar metrics.
+
+    Returns a level-3 report containing checks, warnings, and elapsed time.
+    File I/O, JSON decoding, missing required keys, invalid array shapes,
+    and statistical metric errors propagate to the caller.
     """
     from scipy.stats import ks_2samp, wasserstein_distance
 
@@ -489,20 +498,29 @@ def validate_level3(
                f"new={new_uncat:.2%}, ref={ref_uncat:.2%}, diff={diff:.2%}",
                value={"new": round(new_uncat, 4), "ref": round(ref_uncat, 4)})
 
-    # L3-DIM-DIST: KS test on local dimension distributions
+    # Scalar comparisons require the same explicitly identified estimator.
+    # VGT growth curves do not identify the separate localDimensions array.
     new_dims = result.get("localDimensions")
     ref_dims = ref.get("localDimensions")
-    if new_dims is not None and ref_dims is not None:
+    new_method = result.get("dimMethod")
+    ref_method = ref.get("dimMethod")
+    if new_dims is None or ref_dims is None:
+        report.add_warning("Skipped scalar dimension comparisons: localDimensions missing "
+                           "from result or reference")
+    elif new_method not in ("pr", "twonn", "vgt") or new_method != ref_method:
+        report.add_warning("Skipped scalar dimension comparisons: dimMethod must identify "
+                           f"the same supported estimator (new={new_method!r}, ref={ref_method!r})")
+    else:
+        # L3-DIM-DIST: KS test on like-for-like scalar distributions
         stat, p = ks_2samp(new_dims, ref_dims)
         report.add("L3-DIM-DIST", True,  # always informational
-                   f"KS stat={stat:.4f}, p={p:.4e}",
+                   f"{new_method}: KS stat={stat:.4f}, p={p:.4e}",
                    value={"ks_stat": round(stat, 4), "p_value": float(f"{p:.4e}")})
 
-    # L3-VGT-SHAPE: Wasserstein distance on VGT distributions
-    if new_dims is not None and ref_dims is not None:
+        # L3-DIM-WASSERSTEIN: distance on the declared estimator's scalars
         wd = float(wasserstein_distance(new_dims, ref_dims))
-        report.add("L3-VGT-SHAPE", True,  # informational
-                   f"Wasserstein distance={wd:.4f}",
+        report.add("L3-DIM-WASSERSTEIN", True,  # informational
+                   f"{new_method}: Wasserstein distance={wd:.4f}",
                    value=round(wd, 4))
 
     # L3-SILHOUETTE-COMP: compare silhouette scores
