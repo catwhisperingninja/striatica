@@ -1,4 +1,8 @@
-"""Build FROZEN-schema traced circuits from Neuronpedia attribution graphs.
+"""Build traced circuit slices and full Neuronpedia attribution graphs.
+
+``build_full_traced_graph`` retains multi-layer topology in a separate,
+versioned, label-free schema. The frozen single-layer contract below applies
+only to ``build_traced_circuit`` and ``scrub_check``.
 
 Takes a raw Neuronpedia graph (the full S3 JSON: {metadata, qParams, nodes,
 links}), the small graph record from GET /api/graph/{model}/{slug}, the public
@@ -25,7 +29,9 @@ byte-identical JSON.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
+import math
 import re
 from collections import Counter
 from pathlib import Path
@@ -67,6 +73,168 @@ _METADATA_KEYS = {
 _FORBIDDEN_KEYS = {"clerp", "pos_str", "neg_str"}
 
 _MAX_LOCAL_INDEX = 16383  # width_16k: local feature indices are 0..16383
+
+
+def build_full_traced_graph(
+    raw_graph: dict,
+    record: dict,
+    source_set: dict,
+    dictionaries: dict[int, dict],
+) -> dict:
+    """Build a label-free, instance-preserving Gemma Scope 16k graph.
+
+    This is a separate schema, NOT the frozen single-layer circuit. Graph
+    node IDs remain edge endpoints; featureAnchor joins a feature instance to
+    its layer's dictionary. No aggregation, normalization, filtering or layout
+    is performed. Special nodes have no dictionary anchor.
+
+    ``dictionaries`` maps each used feature layer to local dataset metadata.
+    Every join must pass the real identity validator, including matching repo
+    and layer. This verifies declared dictionary identity, not historical
+    capture weights or their precision. Missing activity/pruning stays None.
+
+    Losslessness covers topology, numerical node attributes and anonymous
+    group membership. Labels, UI state and arbitrary free text are deliberately
+    excluded. The input hash identifies the original payload without exposing
+    its text. Inputs are never mutated; nothing is fetched or written.
+    """
+    if source_set.get("modelId") != record.get("modelId"):
+        raise ValueError("Source-set model does not match graph record")
+
+    def number(value, field):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError(f"Graph {field} must be a finite number")
+        return value
+
+    nodes = []
+    ids = set()
+    layers = set()
+    kinds = {"cross layer transcoder", "mlp reconstruction error", "embedding", "logit"}
+    numeric_fields = ("activation", "influence", "token_prob")
+    integer_fields = ("feature", "ctx_idx", "run_idx", "reverse_ctx_idx")
+    for raw in raw_graph["nodes"]:
+        node_id = raw.get("node_id")
+        if not isinstance(node_id, str) or not node_id or node_id in ids:
+            raise ValueError("Graph node IDs must be unique nonempty strings")
+        ids.add(node_id)
+        kind = raw.get("feature_type")
+        if kind not in kinds:
+            raise ValueError(
+                "Unsupported graph node kind; update the graph contract before importing"
+            )
+        node = {"node_id": node_id, "feature_type": kind, "layer": raw["layer"]}
+        for field in integer_fields:
+            value = raw.get(field)
+            if value is not None and type(value) is not int:
+                raise ValueError(f"Graph {field} must be an integer")
+            node[field] = value
+        for field in numeric_fields:
+            value = raw.get(field)
+            node[field] = number(value, field) if value is not None else None
+        target = raw.get("is_target_logit")
+        if target is not None and type(target) is not bool:
+            raise ValueError("Graph is_target_logit must be a boolean")
+        node["is_target_logit"] = target
+        node["featureAnchor"] = None
+        if kind == "cross layer transcoder":
+            if not re.fullmatch(r"\d+", str(raw["layer"])):
+                raise ValueError("Feature nodes require an integer layer")
+            layer = int(raw["layer"])
+            if node["feature"] is None:
+                raise ValueError("Feature nodes require a feature index")
+            local = extract_local_feature_index(node["feature"], layer)
+            node["featureAnchor"] = {"layer": layer, "featureIndex": local}
+            layers.add(layer)
+        nodes.append(node)
+
+    identities = {}
+    for layer in sorted(layers):
+        md = dictionaries.get(layer)
+        if md is None:
+            raise ValueError(f"Missing dictionary metadata for feature layer {layer}")
+        match = re.fullmatch(r"layer_?(\d+)(?:-.*)?", str(md.get("layer", "")))
+        if not match or int(match.group(1)) != layer:
+            raise ValueError(
+                f"Dictionary metadata layer does not match feature layer {layer}"
+            )
+        sources = [
+            source
+            for source in source_set.get("sources", [])
+            if (m := _SAE_ID_RE.fullmatch(source.get("saelensSaeId", "")))
+            and int(m.group(1)) == layer
+        ]
+        if len(sources) != 1:
+            raise ValueError(
+                f"Expected exactly one dictionary source for feature layer {layer}"
+            )
+        source = sources[0]
+        repo = source.get("hfRepoId")
+        if not repo or repo != md.get("transcoder", {}).get("repo_id"):
+            raise ValueError(
+                f"Dictionary repository mismatch for feature layer {layer}"
+            )
+        validate_graph_identity(record, raw_graph, source_set, md, layer=layer)
+        identities[str(layer)] = {
+            "sourceId": source["id"],
+            "hfRepoId": repo,
+            "saelensSaeId": source["saelensSaeId"],
+        }
+
+    edges = []
+    for raw in raw_graph["links"]:
+        if raw.get("source") not in ids or raw.get("target") not in ids:
+            raise ValueError("Graph edge endpoint does not resolve to a node")
+        edges.append(
+            {
+                "source": raw["source"],
+                "target": raw["target"],
+                "weight": number(raw.get("weight"), "edge weight"),
+            }
+        )
+
+    metadata = raw_graph.get("metadata", {})
+    settings = {}
+    for output, key, fields in (
+        ("pruning", "pruning_settings", ("node_threshold", "edge_threshold")),
+        (
+            "generation",
+            "generation_settings",
+            ("max_n_logits", "desired_logit_prob", "max_feature_nodes"),
+        ),
+    ):
+        raw = metadata.get(key)
+        settings[output] = (
+            None
+            if raw is None
+            else {field: number(raw[field], field) for field in fields if field in raw}
+        )
+    return {
+        "schemaVersion": 1,
+        "type": "traced-graph",
+        "source": "neuronpedia",
+        "dictionaries": identities,
+        "nodes": nodes,
+        "edges": edges,
+        # Groups may refer to members absent from an upstream-pruned payload;
+        # preserve those references, but never their semantic group labels.
+        "groups": [
+            list(group[1:])
+            for group in (raw_graph.get("qParams", {}) or {}).get("supernodes", [])
+        ],
+        "metadata": {
+            "model": record["modelId"],
+            "slug": record["slug"],
+            "sourceSet": record["sourceSetName"],
+            "rawGraphSha256": hashlib.sha256(
+                json.dumps(raw_graph, sort_keys=True, allow_nan=False).encode()
+            ).hexdigest(),
+            **settings,
+        },
+    }
 
 
 def _kept_layer_feature_ids(raw_graph: dict, layer: int) -> set[str]:
