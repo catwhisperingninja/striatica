@@ -89,6 +89,13 @@ counterpart's norm. It preserves shape and norm profile, not the real geometry o
 encoder/decoder dependence. Three draws give an empirical tail-resolution floor
 of 0.25 under run exchangeability, not a significance claim.
 
+**Null coverage is metric-specific.** Only `A_dec_frame_matched` (S1) and
+`S5_squared_cos_pr` have matched-null PR curves. `paper_joint_score`,
+`S5_abs_cos_pr` and `A_dec_raw_diagnostic` are **real-only, uncontrolled PR
+curves**: descriptive measurements with no matched-null PR baseline. A saved
+per-latent null score is not a null PR curve. The manifest's `pr_curve_controls`
+records these lists, which also drive run-dependent curve selection.
+
 Every PR point includes `center`, `row_normalize`, `weights` and population size.
 Cutoffs cover −1–1 in 0.01 steps for cosine and 1–`d_ff` logarithmically for S5.
 Empty populations have undefined PR (`null`). Changing population size changes

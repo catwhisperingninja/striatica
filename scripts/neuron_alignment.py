@@ -277,6 +277,15 @@ def main():
             "paper_score": "max over shared neuron/sign candidates of min(encoder_cos, decoder_cos)",
             "spectral_pr": "released dictionary row geometry, without host-gain reweighting; center separately within each partition",
         },
+        "pr_curve_controls": {
+            "matched_null_metrics": ["A_dec_frame_matched", "S5_squared_cos_pr"],
+            "real_only_uncontrolled_metrics": [
+                "A_dec_raw_diagnostic",
+                "S5_abs_cos_pr",
+                "paper_joint_score",
+            ],
+            "interpretation": "Real-only PR curves have no matched-null PR baseline; they are descriptive, not controlled comparisons. Per-latent score availability does not imply a PR null curve exists.",
+        },
         "S5": {
             "abs_cos_pr": "sum(abs(cos))**2 / sum(cos**2)",
             "squared_cos_pr": "sum(cos**2)**2 / sum(cos**4)",
@@ -319,9 +328,10 @@ def main():
         (args.output / f"{name}-summary.json").write_text(
             json.dumps(stats, indent=2) + "\n"
         )
-        metrics = ["A_dec_frame_matched", "S5_squared_cos_pr"]
-        if run == 0:
-            metrics += ["A_dec_raw_diagnostic", "S5_abs_cos_pr", "paper_joint_score"]
+        controls = metadata["pr_curve_controls"]
+        metrics = controls["matched_null_metrics"] + (
+            controls["real_only_uncontrolled_metrics"] if run == 0 else []
+        )
         print(
             f"{name}: alignment saved; elapsed {time.monotonic() - started:.1f}s",
             flush=True,
