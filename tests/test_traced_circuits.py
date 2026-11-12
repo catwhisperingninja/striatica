@@ -783,6 +783,11 @@ def test_full_graph_preserves_instances_topology_and_numeric_values(full_graph_i
         node_id=original["node_id"] + "_repeat", ctx_idx=original["ctx_idx"] + 1
     )
     graph["nodes"].append(repeat)
+    repeated_edge = copy.deepcopy(
+        next(edge for edge in graph["links"] if edge["source"] == original["node_id"])
+    )
+    repeated_edge["source"] = repeat["node_id"]
+    graph["links"].append(repeated_edge)
     other_layer = next(
         n
         for n in graph["nodes"]
@@ -795,8 +800,8 @@ def test_full_graph_preserves_instances_topology_and_numeric_values(full_graph_i
     assert result["schemaVersion"] == 1
     assert result["type"] == "traced-graph"
     assert len(result["nodes"]) == 54
-    assert result["edges"] == graph["links"]  # all 250, including 80 negative weights
-    assert sum(e["weight"] < 0 for e in result["edges"]) == 80
+    assert result["edges"] == graph["links"]  # all 251, including 81 negative weights
+    assert sum(e["weight"] < 0 for e in result["edges"]) == 81
     nodes = {n["node_id"]: n for n in result["nodes"]}
     assert set(nodes) == {n["node_id"] for n in graph["nodes"]}
     for raw in graph["nodes"]:
@@ -838,12 +843,87 @@ def test_full_graph_unknowns_remain_unknown_and_labels_are_excluded(full_graph_i
         node["clerp"] = "PRIVATE_SENTINEL"
         node["explanation"] = "PRIVATE_SENTINEL"
     graph["metadata"].pop("pruning_settings")
+    pruned_id = graph["nodes"].pop()["node_id"]
+    graph["links"] = [
+        edge
+        for edge in graph["links"]
+        if pruned_id not in (edge["source"], edge["target"])
+    ]
+    graph["qParams"]["supernodes"][0].append(pruned_id)
     graph["qParams"]["supernodes"][0][0] = "PRIVATE_SENTINEL"
     result = traced_circuits.build_full_traced_graph(*full_graph_inputs)
     assert all(n["activation"] is None for n in result["nodes"])
     assert result["metadata"]["pruning"] is None
     assert result["groups"] == [sn[1:] for sn in graph["qParams"]["supernodes"]]
     assert "PRIVATE_SENTINEL" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("field", ["special-layer", "slug", "source-id", "source-repo"])
+def test_full_graph_rejects_nested_text_in_scalar_fields(full_graph_inputs, field):
+    graph, record, sources, dictionaries = full_graph_inputs
+    nested = {"clerp": "PRIVATE_SENTINEL"}
+    if field == "special-layer":
+        special = next(
+            node for node in graph["nodes"] if node["feature_type"] == "embedding"
+        )
+        special["layer"] = nested
+    elif field == "slug":
+        record["slug"] = nested
+    elif field == "source-id":
+        sources["sources"][-1]["id"] = nested
+    else:
+        sources["sources"][-1]["hfRepoId"] = nested
+        dictionaries[0]["transcoder"]["repo_id"] = nested
+    with pytest.raises(ValueError) as exc:
+        traced_circuits.build_full_traced_graph(*full_graph_inputs)
+    assert "PRIVATE_SENTINEL" not in str(exc.value)
+
+
+@pytest.mark.parametrize("member", [{"clerp": "PRIVATE_SENTINEL"}, [], None, 7, ""])
+def test_full_graph_rejects_malformed_group_members(full_graph_inputs, member):
+    graph, _, _, _ = full_graph_inputs
+    graph["qParams"]["supernodes"][0].append(member)
+    with pytest.raises(ValueError) as exc:
+        traced_circuits.build_full_traced_graph(*full_graph_inputs)
+    assert "PRIVATE_SENTINEL" not in str(exc.value)
+
+
+@pytest.mark.parametrize("group", ["PRIVATE_SENTINEL", {"clerp": "PRIVATE_SENTINEL"}, []])
+def test_full_graph_rejects_malformed_groups(full_graph_inputs, group):
+    graph, _, _, _ = full_graph_inputs
+    graph["qParams"]["supernodes"] = [group]
+    with pytest.raises(ValueError) as exc:
+        traced_circuits.build_full_traced_graph(*full_graph_inputs)
+    assert "PRIVATE_SENTINEL" not in str(exc.value)
+
+
+@pytest.mark.parametrize("fault", [None, "scan", "record-family", "source-family"])
+def test_full_graph_validates_identity_without_feature_nodes(full_graph_inputs, fault):
+    graph, record, sources, _ = full_graph_inputs
+    graph["nodes"] = [
+        node for node in graph["nodes"] if node["feature_type"] != "cross layer transcoder"
+    ]
+    ids = {node["node_id"] for node in graph["nodes"]}
+    graph["links"] = [
+        edge
+        for edge in graph["links"]
+        if edge["source"] in ids and edge["target"] in ids
+    ]
+    if fault == "scan":
+        graph["metadata"]["scan"] = "different-model"
+    elif fault == "record-family":
+        record["sourceSetName"] = "different-source"
+    elif fault == "source-family":
+        sources["name"] = "different-source"
+    if fault:
+        with pytest.raises(ValueError):
+            traced_circuits.build_full_traced_graph(graph, record, sources, {})
+    else:
+        result = traced_circuits.build_full_traced_graph(graph, record, sources, {})
+        assert result["dictionaries"] == {}
+        assert result["edges"] == graph["links"]
+        assert all(node["featureAnchor"] is None for node in result["nodes"])
+        assert {node["node_id"] for node in result["nodes"]} == ids
 
 
 @pytest.mark.parametrize(

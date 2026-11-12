@@ -98,8 +98,9 @@ def build_full_traced_graph(
     excluded. The input hash identifies the original payload without exposing
     its text. Inputs are never mutated; nothing is fetched or written.
     """
-    if source_set.get("modelId") != record.get("modelId"):
-        raise ValueError("Source-set model does not match graph record")
+    validate_graph_identity(record, raw_graph, source_set, None)
+    if not isinstance(record.get("slug"), str) or not record["slug"]:
+        raise ValueError("Graph slug must be a nonempty string")
 
     def number(value, field):
         if (
@@ -126,6 +127,8 @@ def build_full_traced_graph(
             raise ValueError(
                 "Unsupported graph node kind; update the graph contract before importing"
             )
+        if type(raw["layer"]) not in (str, int):
+            raise ValueError("Graph layer must be a string or integer")
         node = {"node_id": node_id, "feature_type": kind, "layer": raw["layer"]}
         for field in integer_fields:
             value = raw.get(field)
@@ -172,8 +175,14 @@ def build_full_traced_graph(
                 f"Expected exactly one dictionary source for feature layer {layer}"
             )
         source = sources[0]
+        if not isinstance(source.get("id"), str) or not source["id"]:
+            raise ValueError("Dictionary source ID must be a nonempty string")
         repo = source.get("hfRepoId")
-        if not repo or repo != md.get("transcoder", {}).get("repo_id"):
+        if (
+            not isinstance(repo, str)
+            or not repo
+            or repo != md.get("transcoder", {}).get("repo_id")
+        ):
             raise ValueError(
                 f"Dictionary repository mismatch for feature layer {layer}"
             )
@@ -212,6 +221,15 @@ def build_full_traced_graph(
             if raw is None
             else {field: number(raw[field], field) for field in fields if field in raw}
         )
+    groups = []
+    for group in (raw_graph.get("qParams", {}) or {}).get("supernodes", []):
+        if not isinstance(group, list) or not group:
+            raise ValueError("Graph groups must be nonempty lists")
+        members = group[1:]
+        if any(not isinstance(member, str) or not member for member in members):
+            raise ValueError("Graph group members must be nonempty node ID strings")
+        groups.append(members)
+
     return {
         "schemaVersion": 1,
         "type": "traced-graph",
@@ -221,10 +239,7 @@ def build_full_traced_graph(
         "edges": edges,
         # Groups may refer to members absent from an upstream-pruned payload;
         # preserve those references, but never their semantic group labels.
-        "groups": [
-            list(group[1:])
-            for group in (raw_graph.get("qParams", {}) or {}).get("supernodes", [])
-        ],
+        "groups": groups,
         "metadata": {
             "model": record["modelId"],
             "slug": record["slug"],

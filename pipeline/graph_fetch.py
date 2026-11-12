@@ -314,13 +314,16 @@ def validate_graph_identity(
     record: dict,
     graph: dict,
     source_set: dict,
-    dataset_metadata: dict,
+    dataset_metadata: dict | None,
     allow_l0_mismatch: bool = False,
     layer: int | None = None,
 ) -> dict:
-    """Validate that a Neuronpedia graph and a local dataset share identity.
+    """Validate graph identity, optionally including a local dictionary join.
 
     Args:
+        dataset_metadata: Local dictionary metadata, or ``None`` to check only
+            graph-level model and source-set identity. The latter checks against
+            source_set["modelId"] and makes no dictionary/L0 verification claim.
         layer: The transformer layer whose feature nodes the caller keeps. The
             per-layer L0 source lookup uses THIS layer so the check is honest
             for the filtered layer. ``None`` (the default, e.g. for standalone
@@ -328,7 +331,7 @@ def validate_graph_identity(
 
     Checks (all hard ValueError on failure):
       - model: record["modelId"] and graph["metadata"]["scan"] must both match
-        dataset_metadata["model_id"]
+        dataset_metadata["model_id"], or source_set["modelId"] for graph-only checks
       - source set: must be the gemmascope-transcoder-16k family (checked on
         both record["sourceSetName"] and source_set["name"])
       - dataset dictionary shape: num_features == 16384, transcoder width
@@ -343,20 +346,26 @@ def validate_graph_identity(
           UNVERIFIABLE  -> ValueError, unless allow_l0_mismatch=True, then
                            returns {"l0": <dataset l0>, "l0Verified": False}
     """
-    dataset_model = dataset_metadata["model_id"]
+    dataset_model = (
+        source_set.get("modelId")
+        if dataset_metadata is None
+        else dataset_metadata["model_id"]
+    )
+    if not isinstance(dataset_model, str) or not dataset_model:
+        raise ValueError("Expected model identity must be a nonempty string")
 
     record_model = record.get("modelId")
     if record_model != dataset_model:
         raise ValueError(
             f"Model mismatch: graph record modelId is '{record_model}' but "
-            f"the local dataset is '{dataset_model}'."
+            f"the expected model is '{dataset_model}'."
         )
 
     scan = graph.get("metadata", {}).get("scan")
     if scan != dataset_model:
         raise ValueError(
-            f"Model mismatch: graph metadata.scan is '{scan}' but the local "
-            f"dataset is '{dataset_model}'."
+            f"Model mismatch: graph metadata.scan is '{scan}' but the expected "
+            f"model is '{dataset_model}'."
         )
 
     for label, name in (
@@ -368,6 +377,9 @@ def validate_graph_identity(
                 f"Source set mismatch: {label} is '{name}', expected the "
                 f"'{REQUIRED_SOURCE_SET}' transcoder family."
             )
+
+    if dataset_metadata is None:
+        return {"l0": None, "l0Verified": False}
 
     width = dataset_metadata.get("transcoder", {}).get("width")
     if width != REQUIRED_WIDTH:
