@@ -10,8 +10,12 @@ interface LogEntry {
 
 const MAX_LOG = 3
 
-export default function DebugConsole() {
-  const [open, setOpen] = useState(true)
+export default function DebugConsole({ extraState = {}, initialOpen = true, positionClassName = 'top-12 right-[270px]' }: {
+  extraState?: Record<string, string>
+  initialOpen?: boolean
+  positionClassName?: string
+}) {
+  const [open, setOpen] = useState(initialOpen)
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [copied, setCopied] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
@@ -158,6 +162,7 @@ export default function DebugConsole() {
   // Copy full state + log to clipboard
   const handleCopy = () => {
     const state = [
+      ...Object.entries(extraState).map(([key, value]) => `${key}: ${value}`),
       `viewMode: ${viewMode}`,
       `colorMode: ${colorMode}`,
       `selectedIndex: ${selectedIndex}`,
@@ -191,7 +196,7 @@ export default function DebugConsole() {
 
   if (!open) {
     return (
-      <div className="fixed top-12 right-[270px] z-[9999]">
+      <div className={`fixed ${positionClassName} z-[9999]`}>
         <button
           onClick={() => setOpen(true)}
           className="px-2 py-1 text-[10px] font-mono text-yellow-400 bg-gray-900 border border-yellow-600 rounded cursor-pointer hover:bg-yellow-900/30 transition-colors"
@@ -204,7 +209,7 @@ export default function DebugConsole() {
   }
 
   return (
-    <div className="fixed top-12 right-[270px] z-[9999] w-[320px] max-h-[80vh] bg-black/95 border border-yellow-700/50 rounded-lg font-mono text-[10px] text-gray-300 shadow-2xl overflow-hidden flex flex-col">
+    <div className={`fixed ${positionClassName} z-[9999] w-[320px] max-h-[80vh] bg-black/95 border border-yellow-700/50 rounded-lg font-mono text-[10px] text-gray-300 shadow-2xl overflow-hidden flex flex-col`}>
       {/* Header */}
       <div className="flex items-center justify-between px-2 py-1 border-b border-gray-800 bg-gray-900/50">
         <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Debug Console</span>
@@ -232,6 +237,7 @@ export default function DebugConsole() {
 
       {/* State panel */}
       <div className="px-2 py-1.5 border-b border-gray-800 space-y-0.5">
+        {Object.entries(extraState).map(([key, value]) => <Row key={key} label={key} value={value} />)}
         <Row label="dataset" value={currentDatasetFile ?? 'null'} />
         <Row label="viewMode" value={viewMode} />
         <Row label="colorMode" value={colorMode} />

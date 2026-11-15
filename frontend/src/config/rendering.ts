@@ -5,6 +5,29 @@
 // value and something else breaks, the coupling is documented below.
 // ─────────────────────────────────────────────────────────────────────
 
+// ── Opt-in no-UMAP graph pilot (not the production reducer) ──────────
+export const GRAPH_PILOT = {
+  sceneRadius: 0.85,
+  cameraPosition: [0, 0, 2.8] as [number, number, number],
+  background: '#000000',
+  layerHueStart: 0.48,
+  layerHueSpan: 0.4,
+  layerSaturation: 0.75,
+  layerLightness: 0.6,
+  selectedColor: '#ffffff',
+  positiveColor: '#67e8f9',
+  negativeColor: '#fbbf24',
+  pointSize: 0.065,
+  selectedSize: 0.11,
+  pointOpacity: 0.65,
+  contextOpacity: 0.18,
+  edgeOpacity: 0.3,
+  allEdgesOpacity: 0.045,
+  arrowLength: 0.018,
+  arrowWidth: 0.008,
+  raycastThreshold: 0.012,
+} as const
+
 // ── Camera ──────────────────────────────────────────────────────────
 export const CAMERA = {
   /** Default camera position (reset target). Coupled to FOV + data bounds. */

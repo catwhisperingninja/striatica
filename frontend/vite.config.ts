@@ -54,7 +54,26 @@ function datasetManifestPlugin(): Plugin {
   }
 }
 
+/** Serve only the prepared, label-free pilot bundle, never production datasets. */
+function graphPilotPlugin(): Plugin {
+  return {
+    name: 'graph-pilot-cache',
+    configureServer(server) {
+      server.middlewares.use('/__pilot/no-umap.json', (_req, res) => {
+        const file = path.resolve(__dirname, '../.amp/in/orb-backup/no-umap-pilot/viewer.json')
+        if (!fs.existsSync(file)) {
+          res.statusCode = 404
+          res.end('Prepared pilot cache is unavailable; no production fallback.')
+          return
+        }
+        res.setHeader('Content-Type', 'application/json')
+        fs.createReadStream(file).pipe(res)
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), datasetManifestPlugin()],
+  plugins: [react(), tailwindcss(), datasetManifestPlugin(), graphPilotPlugin()],
   server: { port: 5173 },
 })

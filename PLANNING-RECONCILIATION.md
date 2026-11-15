@@ -86,7 +86,17 @@ Execution: `poetry run python .amp/in/orb-backup/no-umap-pilot/run.py`. An indep
 
 Input SHA-256: `a6e4c7e1a003dadf35aefd9ecc1bd8de80c5bd24861fe551d3aaddf2f334cae2`. Decoder repository: `google/gemma-scope-2b-pt-transcoders`, revision `50eec2f25c60545a9a74c1c3a26a0afdd0b4b872`. Current source-set and graph-record identities were checked against the cached manifest; this validates declared identities, not historical capture weights. Only small identity/API metadata was refreshed; no model weights or graph payloads were downloaded.
 
-Reusable script, coordinates, label-free graphs and complete numeric report with all layer counts/means are under `.amp/in/orb-backup/no-umap-pilot/`. These are local ignored pilot outputs, not production data or a committed implementation. The result earns the next small deliverable: render this same two-graph slice, preserving graph instances and handling special nodes explicitly. No viewer work or production replacement has happened yet.
+Reusable script, coordinates, label-free graphs and complete numeric report with all layer counts/means are under `.amp/in/orb-backup/no-umap-pilot/`. These are local ignored pilot outputs, not production data or a committed implementation. The numerical result earned a rendered two-graph slice, described below. No production replacement has happened.
+
+## Opt-in rendered slice — November 14, 2026 UTC
+
+A development-only screen at `?pilot=traced` renders the existing real Dallas/Oakland graphs with shared spectral or PCA coordinates. The normal atlas route and default reducer are unchanged. It draws signed, directed attribution edges, not geometry-neighbour edges. Coincident token instances retain separate node IDs and incident-edge records while sharing a dictionary anchor's position. Special nodes have no decoder coordinates; their original connections remain accessible in the inspector. Unpositioned and coincident edges are explicitly counted, not silently discarded or bridged.
+
+The screen consumes the prepared, ignored `.amp/in/orb-backup/no-umap-pilot/viewer.json` through a dev-server-only endpoint. The local `export_viewer.py` packages existing outputs; it does not fit another layout or regenerate production datasets. Neither the bundle nor the local pilot scripts are delivered by a Git pull. Without the prepared cache, the pilot displays an explicit error and never falls back to production or synthetic data.
+
+Verification: `pnpm --dir frontend build`, ESLint on changed files, and `git diff --check` passed. The local real-input browser check `node .amp/in/orb-backup/no-umap-pilot/verify-viewer.mjs` passed nine checks, including actual anchor picking, duplicate-instance selection, exact signed endpoint/weight records, selection/camera preservation across graph/layout switches, all-edge accounting, special nodes, narrow layout and missing-cache handling. Desktop/narrow captures and the moving-pointer interaction recording were inspected. Normal atlas controls mount, but this is not a full default-atlas regression pass. No tests were added or modified.
+
+This slice makes the candidate inspectable; it does not improve the 19.93% retention, validate spatial interpretation, or retire production UMAP. Full-dictionary feasibility/fidelity, original-space clustering and required data/visual approvals remain before cutover. SAE is a fallback to discuss, not an automatic switch.
 
 Keep product and paper work parallel; only claims that need missing evidence wait for it. Small, checkable outcomes are sufficient: new DAG, orchestration, or CI machinery is not a prerequisite.
 
