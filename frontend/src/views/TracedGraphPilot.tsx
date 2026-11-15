@@ -150,7 +150,7 @@ function Pilot({ data }: { data: PilotData }) {
           <Canvas frameloop="demand" camera={{ position: STYLE.cameraPosition, fov: CAMERA.fov }} onCreated={({ raycaster }) => { raycaster.params.Points.threshold = STYLE.raycastThreshold }} style={{ background: STYLE.background }}>
             <OrbitControls ref={controls} makeDefault enableDamping={false} rotateSpeed={CAMERA.rotateSpeed} zoomSpeed={CAMERA.zoomSpeed} panSpeed={CAMERA.panSpeed} />
             <CameraTracker controlsRef={controls} />
-            <DecoderPoints key={layout} positions={positions} rows={rows} keys={data.keys} selectedRow={selectedRow} neighbours={neighbours} onSelect={chooseRow} />
+            <DecoderPoints key={`${graph.metadata.slug}:${layout}`} positions={positions} rows={rows} keys={data.keys} selectedRow={selectedRow} neighbours={neighbours} onSelect={chooseRow} />
             <AttributionEdges edges={spatial} all={scope === 'all'} />
             {selectedRow !== null && <SelectionRing position={positions[selectedRow]} />}
           </Canvas>

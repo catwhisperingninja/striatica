@@ -67,7 +67,15 @@ function graphPilotPlugin(): Plugin {
           return
         }
         res.setHeader('Content-Type', 'application/json')
-        fs.createReadStream(file).pipe(res)
+        fs.createReadStream(file).on('error', () => {
+          if (res.headersSent) {
+            res.destroy()
+          } else {
+            res.statusCode = 500
+            res.setHeader('Content-Type', 'text/plain')
+            res.end('Prepared pilot cache could not be read; no production fallback.')
+          }
+        }).pipe(res)
       })
     },
   }
