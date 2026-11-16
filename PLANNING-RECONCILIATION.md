@@ -1,6 +1,8 @@
 # Planning reconciliation
 
-Status: November 14, 2026 UTC. This is the public-safe product checkpoint, not a completed migration, scientific signoff, or publication claim.
+Status: November 16, 2026 UTC. This is the public-safe product checkpoint, not a completed migration, scientific signoff, or publication claim.
+
+[PR #22](https://github.com/catwhisperingninja/striatica/pull/22) and [PR #23](https://github.com/catwhisperingninja/striatica/pull/23) are merged onto main. The dev-only viewer includes the graph-switch picking and cache-stream error fixes at [12621c0](https://github.com/catwhisperingninja/striatica/commit/12621c08bbf417c2805fc71057bd7a3a296690d3); CodeRabbit approved and all reported checks passed. This does not change the production reducer.
 
 ## Completion goal
 
@@ -46,7 +48,7 @@ Require:
 
 Engineering checks and scientific fidelity must be reported separately. Passing identity/topology checks cannot substitute for an accepted fidelity criterion. The integrated viewer will also require inspection of rendered states and interactions.
 
-Extend existing checks rather than building another acceptance framework or duplicating the graph-contract suite. The numerical case below has now passed its candidate screen; rendering and scientific fidelity remain unverified.
+Extend existing checks rather than building another acceptance framework or duplicating the graph-contract suite. The numerical case below passed its candidate screen and the dev-only rendered slice was inspected; scientific fidelity and production integration remain unverified.
 
 ## New proposal: one cosine-neighbour spectral pilot
 
@@ -97,6 +99,18 @@ The screen consumes the prepared, ignored `.amp/in/orb-backup/no-umap-pilot/view
 Verification: `pnpm --dir frontend build`, ESLint on changed files, and `git diff --check` passed. The local real-input browser check `node .amp/in/orb-backup/no-umap-pilot/verify-viewer.mjs` passed nine checks, including actual anchor picking, duplicate-instance selection, exact signed endpoint/weight records, selection/camera preservation across graph/layout switches, all-edge accounting, special nodes, narrow layout and missing-cache handling. Desktop/narrow captures and the moving-pointer interaction recording were inspected. Normal atlas controls mount, but this is not a full default-atlas regression pass. No tests were added or modified.
 
 This slice makes the candidate inspectable; it does not improve the 19.93% retention, validate spatial interpretation, or retire production UMAP. Full-dictionary feasibility/fidelity, original-space clustering and required data/visual approvals remain before cutover. SAE is a fallback to discuss, not an automatic switch.
+
+## Full-dictionary CPU checkpoint — November 16, 2026 UTC
+
+The same spectral configuration did not complete the next bounded feasibility check. Using the already-cached full layer-12 `width_16k/average_l0_6` dictionary (16,384 × 2,304), verified against SHA-256 `bef8a26a3b18e333bafa2c35fe863a2b3dfe26258450e70a5b7480afa8c35ae9`, the single-thread cosine graph took 26.11 wall / 25.69 CPU seconds. Its unit-weight undirected union has 379,772 edges, one connected component and no self-edges.
+
+The process reached its declared 600-second total wall cap during the ARPACK spectral fit and exited on SIGALRM (142). No coordinates or full-dictionary retention measurement were produced; the sequential PCA comparison was not reached. This is a time-budget failure for this configuration, not evidence that spectral geometry, another solver or the project is impossible. The selected 810-feature pilot's 19.93% retention cannot be extrapolated to the complete dictionary. This single-layer run also does not establish complete multilayer-atlas feasibility.
+
+Execution: `poetry run python .amp/in/orb-backup/no-umap-full-dictionary/run.py`. The local ignored `failure-report.json` in the same directory records completed measurements and missing results. No sweep, retry, new downloads, activations, dependency changes, viewer-data replacement or production-data regeneration occurred.
+
+Do not promote this candidate to the production default. The owner chose to continue on their local runner, keeping the same ARPACK configuration, metric, neighbour count and feature population before considering a solver change. The orb's ten-minute timer was experiment policy, not a solver error; its one-thread setting was deliberate, not the full capacity of the four-CPU orb. The runner continuation should use local CPU capacity and remove that artificial cutoff, while recording its actual thread setting and runtime. It has not run yet.
+
+The experiment script and timeout report are ignored files under `.amp/in/orb-backup/no-umap-full-dictionary/`; the earlier viewer's prepared cache and pilot scripts are also ignored. A Git pull brings the code and this planning checkpoint, not those files or cached model weights. Transfer the experiment/checkpoint separately to the Striatica runner and verify the pinned input SHA-256 before execution. Original-space clustering and scientific acceptance remain separate unresolved cutover requirements. No automatic SAE fallback is authorized.
 
 Keep product and paper work parallel; only claims that need missing evidence wait for it. Small, checkable outcomes are sufficient: new DAG, orchestration, or CI machinery is not a prerequisite.
 
