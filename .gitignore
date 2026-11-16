@@ -124,3 +124,4 @@ video/
 # Amp orb runtime files
 ##############################
 .amp/portals/*
+.amp/in/
