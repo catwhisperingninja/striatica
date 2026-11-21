@@ -261,6 +261,9 @@ class TestTranscoderCLI:
         called = {"load_transcoder_vectors": False}
 
         monkeypatch.setattr("pipeline.cli.OUTPUT_DIR", tmp_path / "out")
+        # 0 batches takes the "No Neuronpedia data found" branch: no live S3
+        # download inside a dispatch test (the seam is cli.py's call-time import)
+        monkeypatch.setattr("pipeline.discovery._probe_s3_batch_count", lambda *a, **kw: 0)
         monkeypatch.setattr("pipeline.vectors.load_transcoder_vectors", lambda **kwargs: (
             called.__setitem__("load_transcoder_vectors", True),
             kwargs,
@@ -283,7 +286,12 @@ class TestTranscoderCLI:
             def print_scorecard(self): pass
         monkeypatch.setattr("pipeline.validate.validate_level1_arrays", lambda *a, **kw: _FakeReport())
         monkeypatch.setattr("pipeline.validate.validate_level2", lambda *a, **kw: _FakeReport())
-        monkeypatch.setattr("pipeline.validate.write_validation_sidecar", lambda *a, **kw: None)
+        # Contract: write_validation_sidecar returns the sidecar Path (cli.py
+        # dereferences .name on it) — a None stub crashes the run under test
+        monkeypatch.setattr(
+            "pipeline.validate.write_validation_sidecar",
+            lambda output, *a, **kw: output.with_name(output.stem + "-validation.json"),
+        )
 
         _run_process_pipeline(cfg, tmp_path / "data", device="cpu", redact_semantics=True)
 
